@@ -11,6 +11,7 @@ When you open a Reddit post URL, the content script mounts a floating panel in t
 - fetches the current post JSON
 - fetches the author's `about` JSON when available
 - fetches the author's recent submitted-post history when available
+- fetches the author's recent comment history when available
 - combines text signals and account-history signals into a 0-100 score
 - assigns a risk level from that score
 - shows the reasons that pushed the score upward
@@ -47,6 +48,7 @@ The analyzer currently considers signals such as:
 - burst posting inside a 24-hour window
 - repeated or near-duplicate recent titles
 - heavy concentration in the same subreddit
+- per-subreddit post and comment frequency across visible recent activity
 - moderator-removed recent submissions
 - low-effort title patterns
 - crosspost and NSFW context
@@ -69,6 +71,15 @@ Bait-term scoring is temporarily disabled. The term list is still kept in config
 | `Repeated titles` | Recent titles are semantically very similar | Adds a repetition warning. |
 | `Low-effort language` | Title hits low-effort title patterns | Adds text-quality warnings. |
 | `Crosspost / NSFW` | Post is marked as a crosspost or NSFW | Adds small context warnings. |
+
+## Activity breakdown
+
+The detector panel now includes a `Subreddit breakdown` section. It groups the author's visible recent activity by subreddit and shows:
+
+- post share per subreddit as both percentage and raw count
+- comment share per subreddit as both percentage and raw count
+
+This view is informational rather than directly punitive. It helps explain whether the author is narrowly concentrated in one community or spread across multiple subreddits, without collapsing posts and comments into a single number.
 
 ## Getting started
 
@@ -151,6 +162,7 @@ npm test && npm run typecheck
 - The extension only runs on Reddit post routes matched by the configured post-path pattern.
 - Deleted authors cannot be analyzed.
 - Private, hidden, or unavailable author history lowers confidence rather than pretending the signal is clean.
+- The subreddit breakdown only reflects visible recent submissions and visible recent comments that Reddit returns for that author.
 - Bait-term detection is currently turned off, even though the term list still exists in config for future re-enablement.
 - The score is clamped to a 0-100 range, but the reasoning is intentionally surfaced so users can inspect why the extension decided a post looks risky.
 - This is a heuristic detector, not a truth machine. False positives and false negatives are expected.

@@ -6,6 +6,7 @@ import {
 } from '@/features/reddit-detector/analysis';
 import type {
   RedditAboutResponse,
+  RedditCommentData,
   RedditListingResponse,
   RedditPostData,
 } from '@/features/reddit-detector/types';
@@ -30,6 +31,14 @@ function buildSubmitted(posts: RedditPostData[]): RedditListingResponse<RedditPo
   return {
     data: {
       children: posts.map((post) => ({ data: post, kind: 't3' })),
+    },
+  };
+}
+
+function buildComments(comments: RedditCommentData[]): RedditListingResponse<RedditCommentData> {
+  return {
+    data: {
+      children: comments.map((comment) => ({ data: comment, kind: 't1' })),
     },
   };
 }
@@ -305,5 +314,50 @@ describe('detector heuristics', () => {
     expect(report.author.meta.sampledPosts).toBeNull();
     expect(report.author.reasons.join(' ')).toContain('account-based signals were excluded');
     expect(report.clampedScore).toBe(report.title.points);
+  });
+
+  it('builds per-subreddit post and comment frequency rows', () => {
+    const post = buildPost();
+    const about: RedditAboutResponse = {
+      data: {
+        comment_karma: 120,
+        created_utc: nowSeconds - 60 * 60 * 24 * 200,
+        link_karma: 80,
+      },
+    };
+
+    const submitted = buildSubmitted([
+      buildPost({ name: 't3_a', subreddit: 'technology', subreddit_name_prefixed: 'r/technology' }),
+      buildPost({ name: 't3_b', subreddit: 'technology', subreddit_name_prefixed: 'r/technology' }),
+      buildPost({ name: 't3_c', subreddit: 'books', subreddit_name_prefixed: 'r/books' }),
+    ]);
+    const comments = buildComments([
+      { subreddit: 'technology', subreddit_name_prefixed: 'r/technology' },
+      { subreddit: 'books', subreddit_name_prefixed: 'r/books' },
+      { subreddit: 'books', subreddit_name_prefixed: 'r/books' },
+      { subreddit: 'books', subreddit_name_prefixed: 'r/books' },
+    ]);
+
+    const report = buildDetectorReport(post, about, submitted, comments);
+    const technology = report.author.subredditFrequencies.find(
+      (entry) => entry.subreddit === 'technology',
+    );
+    const books = report.author.subredditFrequencies.find((entry) => entry.subreddit === 'books');
+
+    expect(report.author.meta.sampledComments).toBe(4);
+    expect(technology).toMatchObject({
+      commentCount: 1,
+      postCount: 2,
+      subredditLabel: 'r/technology',
+    });
+    expect(technology?.postRatio).toBeCloseTo(2 / 3, 4);
+    expect(technology?.commentRatio).toBeCloseTo(1 / 4, 4);
+    expect(books).toMatchObject({
+      commentCount: 3,
+      postCount: 1,
+      subredditLabel: 'r/books',
+    });
+    expect(books?.postRatio).toBeCloseTo(1 / 3, 4);
+    expect(books?.commentRatio).toBeCloseTo(3 / 4, 4);
   });
 });

@@ -82,6 +82,11 @@ function percentage(value: number | null) {
   return `${Math.round(value * 100)}%`;
 }
 
+function percentageWithCount(value: number | null, count: number) {
+  if (value === null) return 'Unavailable';
+  return `${Math.round(value * 100)}% (${count})`;
+}
+
 function displayMetric(value: number | null, formatter?: (value: number) => string) {
   if (value === null) return 'Skipped';
   return formatter ? formatter(value) : String(value);
@@ -274,6 +279,7 @@ export function DetectorPanel() {
   const lowConfidenceReasons = reasons.filter(isLowConfidenceReason);
   const substantiveReasons = reasons.filter((reason) => !isLowConfidenceReason(reason));
   const historySlides = report ? buildHistorySlides(report) : [];
+  const subredditFrequencies = report?.author.subredditFrequencies.slice(0, 6) ?? [];
   const activeHistorySlide = historySlides[historyIndex] ?? null;
   const hasSubstantiveFlagReasons = substantiveReasons.length > 0;
   const hasThinHistorySample =
@@ -482,7 +488,7 @@ export function DetectorPanel() {
                     Pulling Reddit JSON endpoints...
                   </div>
                   <p className="mt-2 text-sm text-muted-foreground">
-                    Sampling the current post, author profile, and recent submissions.
+                    Sampling the current post, author profile, recent submissions, and recent comments.
                   </p>
                 </div>
               </motion.div>
@@ -803,6 +809,62 @@ export function DetectorPanel() {
                       </div>
                     </>
                   ) : null}
+                </section>
+
+                <Separator />
+
+                <section className="space-y-3">
+                  <div className="space-y-2">
+                    <div className="text-base font-semibold text-foreground">
+                      Subreddit breakdown
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Visible recent activity split by subreddit for posts and comments.
+                    </p>
+                  </div>
+
+                  {subredditFrequencies.length > 0 ? (
+                    <div className="space-y-2.5">
+                      {subredditFrequencies.map((entry) => (
+                        <div
+                          className="rounded-xl border border-border/55 bg-background/35 px-4 py-3"
+                          key={entry.subreddit}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <Badge variant="outline">{entry.subredditLabel}</Badge>
+                            <span className="text-[0.72rem] text-muted-foreground">
+                              {entry.postCount + entry.commentCount} visible items
+                            </span>
+                          </div>
+
+                          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                            <div className="space-y-1">
+                              <div className="text-[0.72rem] font-medium tracking-[0.14em] text-muted-foreground uppercase">
+                                Posts
+                              </div>
+                              <div className="font-mono text-sm text-foreground">
+                                {percentageWithCount(entry.postRatio, entry.postCount)}
+                              </div>
+                            </div>
+
+                            <div className="space-y-1">
+                              <div className="text-[0.72rem] font-medium tracking-[0.14em] text-muted-foreground uppercase">
+                                Comments
+                              </div>
+                              <div className="font-mono text-sm text-foreground">
+                                {percentageWithCount(entry.commentRatio, entry.commentCount)}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <CardDescription>
+                      Not enough visible post or comment history was available to break activity down by
+                      subreddit.
+                    </CardDescription>
+                  )}
                 </section>
 
               </motion.div>

@@ -3,6 +3,7 @@ import { buildDetectorReport } from '@/features/reddit-detector/analysis';
 import type {
   DetectorReport,
   RedditAboutResponse,
+  RedditCommentData,
   RedditListingResponse,
   RedditPostData,
 } from '@/features/reddit-detector/types';
@@ -90,8 +91,18 @@ export function getUserSubmitted(
   );
 }
 
+export function getUserComments(
+  username: string,
+  origin = globalThis.location?.origin ?? '',
+  limit = DETECTOR_CONFIG.recentPostsToInspect,
+) {
+  return fetchJson<RedditListingResponse<RedditCommentData>>(
+    `${origin}/user/${encodeURIComponent(username)}/comments.json?limit=${limit}`,
+  );
+}
+
 async function getAuthorDataOrNull<TData>(
-  label: 'about' | 'submitted',
+  label: 'about' | 'comments' | 'submitted',
   request: Promise<TData>,
 ): Promise<TData | null> {
   try {
@@ -119,16 +130,19 @@ export async function getCurrentDetectorReport(): Promise<DetectorReport> {
     throw new Error('Post author is deleted or unavailable');
   }
 
-  const [about, submitted] = await Promise.all([
+  const [about, comments, submitted] = await Promise.all([
     getAuthorDataOrNull('about', getUserAbout(post.author)),
+    getAuthorDataOrNull('comments', getUserComments(post.author)),
     getAuthorDataOrNull('submitted', getUserSubmitted(post.author)),
   ]);
 
   console.info('[low-effort-post-alarm] report:author-data', {
     aboutAvailable: Boolean(about?.data),
+    commentsAvailable: comments !== null,
+    commentsCount: comments?.data?.children?.length ?? null,
     submittedAvailable: submitted !== null,
     submittedCount: submitted?.data?.children?.length ?? null,
   });
 
-  return buildDetectorReport(post, about, submitted);
+  return buildDetectorReport(post, about, submitted, comments);
 }

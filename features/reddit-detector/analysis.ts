@@ -4,9 +4,11 @@ import type {
   DetectorReport,
   MatchResult,
   RedditAboutResponse,
+  RedditCommentData,
   RedditListingResponse,
   RedditPostData,
   ScoreLevel,
+  SubredditFrequencyRow,
   TitleBodyAnalysis,
 } from '@/features/reddit-detector/types';
 
@@ -237,6 +239,94 @@ function isModeratorRemovedSubmission(post: RedditPostData) {
   );
 }
 
+function buildSubredditFrequencyRows(
+  submitted: RedditListingResponse<RedditPostData> | null,
+  comments: RedditListingResponse<RedditCommentData> | null,
+): SubredditFrequencyRow[] {
+  const submittedPosts =
+    submitted?.data?.children
+      ?.filter((child) => child.kind === 't3')
+      .map((child) => child.data)
+      .filter(
+        (candidate): candidate is RedditPostData => Boolean(candidate) && Boolean(candidate.subreddit),
+      ) ?? [];
+  const submittedComments =
+    comments?.data?.children
+      ?.filter((child) => child.kind === 't1')
+      .map((child) => child.data)
+      .filter(
+        (candidate): candidate is RedditCommentData =>
+          Boolean(candidate) && Boolean(candidate.subreddit),
+      ) ?? [];
+
+  const postTotal = submittedPosts.length;
+  const commentTotal = submittedComments.length;
+  const bySubreddit = new Map<
+    string,
+    {
+      commentCount: number;
+      postCount: number;
+      subreddit: string;
+      subredditLabel: string;
+    }
+  >();
+
+  for (const post of submittedPosts) {
+    const key = post.subreddit.toLowerCase();
+    const current =
+      bySubreddit.get(key) ?? {
+        commentCount: 0,
+        postCount: 0,
+        subreddit: post.subreddit,
+        subredditLabel: post.subreddit_name_prefixed ?? `r/${post.subreddit}`,
+      };
+
+    current.postCount += 1;
+    bySubreddit.set(key, current);
+  }
+
+  for (const comment of submittedComments) {
+    const key = comment.subreddit.toLowerCase();
+    const current =
+      bySubreddit.get(key) ?? {
+        commentCount: 0,
+        postCount: 0,
+        subreddit: comment.subreddit,
+        subredditLabel: comment.subreddit_name_prefixed ?? `r/${comment.subreddit}`,
+      };
+
+    current.commentCount += 1;
+    bySubreddit.set(key, current);
+  }
+
+  return [...bySubreddit.values()]
+    .map((entry) => ({
+      commentCount: entry.commentCount,
+      commentRatio: commentTotal > 0 ? entry.commentCount / commentTotal : null,
+      postCount: entry.postCount,
+      postRatio: postTotal > 0 ? entry.postCount / postTotal : null,
+      subreddit: entry.subreddit,
+      subredditLabel: entry.subredditLabel,
+    }))
+    .sort((left, right) => {
+      const leftMax = Math.max(left.postRatio ?? 0, left.commentRatio ?? 0);
+      const rightMax = Math.max(right.postRatio ?? 0, right.commentRatio ?? 0);
+
+      if (rightMax !== leftMax) {
+        return rightMax - leftMax;
+      }
+
+      const leftTotal = left.postCount + left.commentCount;
+      const rightTotal = right.postCount + right.commentCount;
+
+      if (rightTotal !== leftTotal) {
+        return rightTotal - leftTotal;
+      }
+
+      return left.subreddit.localeCompare(right.subreddit);
+    });
+}
+
 export function analyzeTitleAndBody(post: RedditPostData): TitleBodyAnalysis {
   const title = post.title ?? '';
   const body = post.selftext ?? '';
@@ -284,12 +374,14 @@ export function analyzeAuthor(
   post: RedditPostData,
   about: RedditAboutResponse | null,
   submitted: RedditListingResponse<RedditPostData> | null,
+  comments: RedditListingResponse<RedditCommentData> | null = null,
 ): AuthorAnalysis {
   const reasons: string[] = [];
   let points = 0;
 
   const now = Date.now();
   const aboutAvailable = Boolean(about?.data);
+  const commentsAvailable = comments !== null;
   const submittedAvailable = submitted !== null;
   const authorSignalsAvailable = aboutAvailable && submittedAvailable;
   const authorCreatedUtc = about?.data?.created_utc ?? null;
@@ -304,8 +396,17 @@ export function analyzeAuthor(
       .filter(
         (candidate): candidate is RedditPostData => Boolean(candidate) && Boolean(candidate.title),
       ) ?? [];
+  const sampledComments =
+    comments?.data?.children
+      ?.filter((child) => child.kind === 't1')
+      .map((child) => child.data)
+      .filter(
+        (candidate): candidate is RedditCommentData =>
+          Boolean(candidate) && Boolean(candidate.subreddit),
+      ) ?? [];
   const moderatorRemovedPosts = sampledPosts.filter(isModeratorRemovedSubmission);
   const historyComparisonPosts = sampledPosts.filter((candidate) => candidate.name !== post.name);
+  const subredditFrequencies = buildSubredditFrequencyRows(submitted, comments);
 
   let accountAgeDays: number | null = null;
   let burstPostCount: number | null = null;
@@ -464,18 +565,21 @@ export function analyzeAuthor(
       aboutAvailable,
       burstPostCount,
       combinedKarma,
+      commentsAvailable,
       commentKarma,
       linkKarma,
       moderatorRemovedPosts: authorSignalsAvailable ? moderatorRemovedPosts.length : null,
       postsPerDay,
       repeatedShortWindowCount,
       repeatedTitleCount,
+      sampledComments: commentsAvailable ? sampledComments.length : null,
       sampledPosts: authorSignalsAvailable ? sampledPosts.length : null,
       sameSubredditRatio,
       submittedAvailable,
     },
     points,
     reasons,
+    subredditFrequencies,
   };
 }
 
@@ -483,9 +587,10 @@ export function buildDetectorReport(
   post: RedditPostData,
   about: RedditAboutResponse | null,
   submitted: RedditListingResponse<RedditPostData> | null,
+  comments: RedditListingResponse<RedditCommentData> | null = null,
 ): DetectorReport {
   const title = analyzeTitleAndBody(post);
-  const author = analyzeAuthor(post, about, submitted);
+  const author = analyzeAuthor(post, about, submitted, comments);
   const totalScore = title.points + author.points;
   const clampedScore = Math.max(0, Math.min(100, Math.round(totalScore)));
 
@@ -493,6 +598,7 @@ export function buildDetectorReport(
     about,
     author,
     clampedScore,
+    comments,
     level: classifyScore(clampedScore),
     post,
     submitted,

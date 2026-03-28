@@ -18,6 +18,14 @@ export interface RedditPostData {
   title: string;
 }
 
+export interface RedditCommentData {
+  body?: string;
+  created_utc?: number;
+  score?: number;
+  subreddit: string;
+  subreddit_name_prefixed?: string;
+}
+
 export interface RedditAboutData {
   comment_karma: number;
   created_utc?: number;
@@ -57,27 +65,40 @@ export interface AuthorMeta {
   aboutAvailable: boolean;
   burstPostCount: number | null;
   combinedKarma: number | null;
+  commentsAvailable: boolean;
   commentKarma: number | null;
   linkKarma: number | null;
   moderatorRemovedPosts: number | null;
   postsPerDay: number | null;
   repeatedShortWindowCount: number | null;
   repeatedTitleCount: number | null;
+  sampledComments: number | null;
   sampledPosts: number | null;
   sameSubredditRatio: number | null;
   submittedAvailable: boolean;
+}
+
+export interface SubredditFrequencyRow {
+  commentCount: number;
+  commentRatio: number | null;
+  postCount: number;
+  postRatio: number | null;
+  subreddit: string;
+  subredditLabel: string;
 }
 
 export interface AuthorAnalysis {
   meta: AuthorMeta;
   points: number;
   reasons: string[];
+  subredditFrequencies: SubredditFrequencyRow[];
 }
 
 export interface DetectorReport {
   about: RedditAboutResponse | null;
   author: AuthorAnalysis;
   clampedScore: number;
+  comments: RedditListingResponse<RedditCommentData> | null;
   level: ScoreLevel;
   post: RedditPostData;
   submitted: RedditListingResponse<RedditPostData> | null;
