@@ -2,8 +2,10 @@ import { startTransition, useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   AlertTriangleIcon,
+  ChevronDownIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  ChevronUpIcon,
   CircleCheckBigIcon,
   Clock3Icon,
   ExternalLinkIcon,
@@ -252,6 +254,7 @@ function StatRow({ label, value }: { label: string; value: string }) {
 
 export function DetectorPanel() {
   const [historyIndex, setHistoryIndex] = useState(0);
+  const [isMinimized, setIsMinimized] = useState(false);
   const [scoreRangeFrame, setScoreRangeFrame] = useState<'low' | 'high'>('low');
   const [showScoreSummary, setShowScoreSummary] = useState(false);
   const query = useQuery({
@@ -401,6 +404,20 @@ export function DetectorPanel() {
                 </Button>
               ) : null}
               <Button
+                aria-label={isMinimized ? 'Expand LEPA panel' : 'Minimize LEPA panel'}
+                onClick={() => {
+                  setIsMinimized((currentValue) => !currentValue);
+                }}
+                size="icon"
+                variant="outline"
+              >
+                {isMinimized ? (
+                  <ChevronUpIcon className="size-4" />
+                ) : (
+                  <ChevronDownIcon className="size-4" />
+                )}
+              </Button>
+              <Button
                 aria-label="Refresh analysis"
                 onClick={() => {
                   startTransition(() => {
@@ -415,7 +432,7 @@ export function DetectorPanel() {
             </div>
           </div>
 
-          {report && showScoreSummary ? (
+          {report && showScoreSummary && !isMinimized ? (
             <div className="space-y-3">
               <div className="flex items-center gap-3">
                 <Badge
@@ -472,7 +489,13 @@ export function DetectorPanel() {
           ) : null}
         </CardHeader>
 
-        <CardContent className="detector-scroll max-h-[78vh] space-y-5 overflow-y-auto pt-4 pb-4">
+        <CardContent
+          className={
+            isMinimized
+              ? 'hidden'
+              : 'detector-scroll max-h-[78vh] space-y-5 overflow-y-auto pt-4 pb-4'
+          }
+        >
           <AnimatePresence mode="wait">
             {query.isPending ? (
               <motion.div
