@@ -74,7 +74,7 @@ Bait-term scoring is temporarily disabled. The term list is still kept in config
 
 ## Activity breakdown
 
-The detector panel now includes a `Subreddit breakdown` section. It groups the author's visible recent activity by subreddit and shows:
+The detector panel includes a `Subreddit breakdown` section. It groups the author's visible recent activity by subreddit and shows:
 
 - post share per subreddit as both percentage and raw count
 - comment share per subreddit as both percentage and raw count
