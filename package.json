@@ -13,7 +13,7 @@
     "build:firefox": "wxt build -b firefox",
     "zip": "wxt zip",
     "zip:chrome": "wxt zip -b chrome",
-    "zip:firefox": "wxt zip -b firefox",
+    "zip:firefox": "wxt zip -b firefox && node scripts/emit-firefox-xpi.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --configLoader native --pool threads",
     "test:watch": "vitest --configLoader native --pool threads",
