@@ -241,7 +241,9 @@ export function analyzeTitleAndBody(post: RedditPostData): TitleBodyAnalysis {
   const title = post.title ?? '';
   const body = post.selftext ?? '';
   const fullText = `${title}\n${body}`;
-  const bait = countMatches(fullText, DETECTOR_CONFIG.baitTerms);
+  const bait = DETECTOR_CONFIG.baitDetectionEnabled
+    ? countMatches(fullText, DETECTOR_CONFIG.baitTerms)
+    : { count: 0, hits: [] };
   const lowEffort = countMatches(title, DETECTOR_CONFIG.lowEffortTitleTerms);
 
   let points = 0;

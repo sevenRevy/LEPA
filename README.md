@@ -48,11 +48,12 @@ The analyzer currently considers signals such as:
 - repeated or near-duplicate recent titles
 - heavy concentration in the same subreddit
 - moderator-removed recent submissions
-- bait phrases in the title or body
 - low-effort title patterns
 - crosspost and NSFW context
 
 The current scoring config lives in `features/reddit-detector/config.ts`. Right now it samples up to 40 recent posts, treats accounts under 180 days as new, and uses score thresholds of 20 / 45 / 70 for low / medium / high risk bands.
+
+Bait-term scoring is temporarily disabled. The term list is still kept in config for later, but bait phrases are not currently contributing points or reasons while that part of the detector is under construction.
 
 ## Flags shown in the panel
 
@@ -66,7 +67,7 @@ The current scoring config lives in `features/reddit-detector/config.ts`. Right 
 | `Burst posting` | Multiple sampled posts land inside the short repeat window | Adds a high-frequency posting warning. |
 | `Subreddit concentration` | Recent posts are dominated by one subreddit | Adds a concentration warning. |
 | `Repeated titles` | Recent titles are semantically very similar | Adds a repetition warning. |
-| `Bait / low-effort language` | Title or body hits bait phrases or low-effort title patterns | Adds text-quality warnings. |
+| `Low-effort language` | Title hits low-effort title patterns | Adds text-quality warnings. |
 | `Crosspost / NSFW` | Post is marked as a crosspost or NSFW | Adds small context warnings. |
 
 ## Getting started
@@ -150,5 +151,6 @@ npm test && npm run typecheck
 - The extension only runs on Reddit post routes matched by the configured post-path pattern.
 - Deleted authors cannot be analyzed.
 - Private, hidden, or unavailable author history lowers confidence rather than pretending the signal is clean.
+- Bait-term detection is currently turned off, even though the term list still exists in config for future re-enablement.
 - The score is clamped to a 0-100 range, but the reasoning is intentionally surfaced so users can inspect why the extension decided a post looks risky.
 - This is a heuristic detector, not a truth machine. False positives and false negatives are expected.

@@ -14,6 +14,7 @@ export const DETECTOR_CONFIG = {
     medium: 45,
     high: 70,
   },
+  baitDetectionEnabled: false,
   baitTerms: [
     'am i the only one',
     'does anyone else',
