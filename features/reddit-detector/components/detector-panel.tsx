@@ -597,7 +597,13 @@ export function DetectorPanel() {
 
                 <Separator />
 
-                <section className="grid gap-6 md:grid-cols-[minmax(0,1fr)_1px_minmax(0,1fr)] md:gap-5">
+                <section
+                  className={
+                    hasHiddenPosts
+                      ? 'grid gap-6'
+                      : 'grid gap-6 md:grid-cols-[minmax(0,1fr)_1px_minmax(0,1fr)] md:gap-5'
+                  }
+                >
                   <div className="space-y-3">
                     <div className="space-y-2">
                       <div className="flex items-center gap-2 text-base font-semibold text-foreground">
@@ -619,6 +625,10 @@ export function DetectorPanel() {
                         value={displayMetric(report.author.meta.accountAgeDays, formatAgeDays)}
                       />
                       <StatRow
+                        label="Total karma"
+                        value={displayMetric(report.author.meta.combinedKarma)}
+                      />
+                      <StatRow
                         label="Posts karma"
                         value={displayMetric(report.author.meta.linkKarma)}
                       />
@@ -627,56 +637,60 @@ export function DetectorPanel() {
                         value={displayMetric(report.author.meta.commentKarma)}
                       />
                       <StatRow
-                        label="Total karma"
-                        value={displayMetric(report.author.meta.combinedKarma)}
+                        label="Current post score"
+                        value={displayMetric(report.post.score ?? null)}
                       />
                     </div>
                   </div>
 
-                  <div
-                    aria-hidden="true"
-                    className={
-                      isCalmState
-                        ? 'hidden w-px self-stretch rounded-full bg-emerald-400/15 md:block'
-                        : 'hidden w-px self-stretch rounded-full bg-border/55 md:block'
-                    }
-                  />
+                  {!hasHiddenPosts ? (
+                    <>
+                      <div
+                        aria-hidden="true"
+                        className={
+                          isCalmState
+                            ? 'hidden w-px self-stretch rounded-full bg-emerald-400/15 md:block'
+                            : 'hidden w-px self-stretch rounded-full bg-border/55 md:block'
+                        }
+                      />
 
-                  <div className="space-y-3">
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2 text-base font-semibold text-foreground">
-                        <Clock3Icon
-                          className={isCalmState ? 'size-4 text-emerald-300' : 'size-4 text-primary'}
-                        />
-                        Posting behavior
+                      <div className="space-y-3">
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2 text-base font-semibold text-foreground">
+                            <Clock3Icon
+                              className={isCalmState ? 'size-4 text-emerald-300' : 'size-4 text-primary'}
+                            />
+                            Posting behavior
+                          </div>
+                        </div>
+
+                        <div className="space-y-2.5">
+                          <StatRow
+                            label="Total posts"
+                            value={displayMetric(report.author.meta.sampledPosts)}
+                          />
+                          <StatRow
+                            label="Mod-removed posts"
+                            value={displayMetric(report.author.meta.moderatorRemovedPosts)}
+                          />
+                          <StatRow
+                            label="Posts/day"
+                            value={displayMetric(report.author.meta.postsPerDay, (value) =>
+                              value.toFixed(2),
+                            )}
+                          />
+                          <StatRow
+                            label="Post frequency"
+                            value={displayPostFrequency(report.author.meta.burstPostCount)}
+                          />
+                          <StatRow
+                            label="Same-subreddit ratio"
+                            value={percentage(report.author.meta.sameSubredditRatio)}
+                          />
+                        </div>
                       </div>
-                    </div>
-
-                    <div className="space-y-2.5">
-                      <StatRow
-                        label="Total posts"
-                        value={displayMetric(report.author.meta.sampledPosts)}
-                      />
-                      <StatRow
-                        label="Mod-removed posts"
-                        value={displayMetric(report.author.meta.moderatorRemovedPosts)}
-                      />
-                      <StatRow
-                        label="Posts/day"
-                        value={displayMetric(report.author.meta.postsPerDay, (value) =>
-                          value.toFixed(2),
-                        )}
-                      />
-                      <StatRow
-                        label="Post frequency"
-                        value={displayPostFrequency(report.author.meta.burstPostCount)}
-                      />
-                      <StatRow
-                        label="Same-subreddit ratio"
-                        value={percentage(report.author.meta.sameSubredditRatio)}
-                      />
-                    </div>
-                  </div>
+                    </>
+                  ) : null}
                 </section>
 
               </motion.div>

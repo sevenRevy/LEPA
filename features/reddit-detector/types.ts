@@ -11,6 +11,7 @@ export interface RedditPostData {
   permalink?: string;
   removed_by_category?: string | null;
   removal_reason?: string | null;
+  score?: number;
   selftext?: string;
   subreddit: string;
   subreddit_name_prefixed?: string;
