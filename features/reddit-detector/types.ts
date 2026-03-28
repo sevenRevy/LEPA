@@ -94,14 +94,31 @@ export interface AuthorAnalysis {
   subredditFrequencies: SubredditFrequencyRow[];
 }
 
+export type DetectorHistoryTone = 'default' | 'destructive' | 'outline';
+
+export interface DetectorHistoryEntry {
+  href: string | null;
+  id: string;
+  isCurrent: boolean;
+  statusLabel: 'Current' | 'Removed' | 'Deleted' | 'Visible';
+  statusTone: DetectorHistoryTone;
+  subreddit: string;
+  title: string;
+  when: string;
+}
+
+export interface DetectorPostSummary {
+  author: string;
+  name?: string;
+  score: number | null;
+}
+
 export interface DetectorReport {
-  about: RedditAboutResponse | null;
   author: AuthorAnalysis;
   clampedScore: number;
-  comments: RedditListingResponse<RedditCommentData> | null;
+  history: DetectorHistoryEntry[];
   level: ScoreLevel;
-  post: RedditPostData;
-  submitted: RedditListingResponse<RedditPostData> | null;
+  post: DetectorPostSummary;
   title: TitleBodyAnalysis;
   totalScore: number;
   verdict: string;

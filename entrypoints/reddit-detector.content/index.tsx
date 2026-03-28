@@ -1,4 +1,3 @@
-import { StrictMode } from 'react';
 import ReactDOM, { type Root } from 'react-dom/client';
 import { ContentScriptContext } from 'wxt/utils/content-script-context';
 import {
@@ -40,8 +39,28 @@ function renderMountError(error: unknown) {
   document.documentElement.append(fallback);
 }
 
+function getSameOriginLinkHref(target: EventTarget | null) {
+  if (!(target instanceof Element)) {
+    return null;
+  }
+
+  const anchor = target.closest('a[href]');
+  if (!anchor) {
+    return null;
+  }
+
+  const href = anchor.getAttribute('href');
+  if (!href) {
+    return null;
+  }
+
+  const nextUrl = new URL(href, globalThis.location.href);
+  return nextUrl.origin === globalThis.location.origin ? nextUrl.href : null;
+}
+
 function watchRouteChanges(onChange: () => void) {
   let previousHref = globalThis.location.href;
+  let scheduledCheck: ReturnType<typeof globalThis.setTimeout> | null = null;
 
   const notifyWhenChanged = () => {
     const nextHref = globalThis.location.href;
@@ -53,40 +72,77 @@ function watchRouteChanges(onChange: () => void) {
     onChange();
   };
 
-  const observer = new MutationObserver(() => {
-    notifyWhenChanged();
-  });
+  const scheduleNotifyWhenChanged = (delayMs = 0) => {
+    if (scheduledCheck !== null) {
+      globalThis.clearTimeout(scheduledCheck);
+    }
 
-  observer.observe(document.documentElement, {
-    childList: true,
-    subtree: true,
-  });
+    scheduledCheck = globalThis.setTimeout(() => {
+      scheduledCheck = null;
+      notifyWhenChanged();
+    }, delayMs);
+  };
 
+  const handleDocumentClick = (event: MouseEvent) => {
+    if (
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    ) {
+      return;
+    }
+
+    const nextHref = getSameOriginLinkHref(event.target);
+    if (!nextHref || nextHref === previousHref) {
+      return;
+    }
+
+    scheduleNotifyWhenChanged();
+    scheduleNotifyWhenChanged(300);
+  };
+
+  const { history } = globalThis;
+  const originalPushState = history.pushState.bind(history);
+  const originalReplaceState = history.replaceState.bind(history);
+
+  history.pushState = ((...args) => {
+    originalPushState(...args);
+    scheduleNotifyWhenChanged();
+  }) as History['pushState'];
+
+  history.replaceState = ((...args) => {
+    originalReplaceState(...args);
+    scheduleNotifyWhenChanged();
+  }) as History['replaceState'];
+
+  document.addEventListener('click', handleDocumentClick, true);
   globalThis.addEventListener('popstate', notifyWhenChanged);
   globalThis.addEventListener('hashchange', notifyWhenChanged);
-
-  const timer = globalThis.setInterval(notifyWhenChanged, 500);
+  const fallbackTimer = globalThis.setInterval(notifyWhenChanged, 4_000);
 
   return () => {
-    observer.disconnect();
+    history.pushState = originalPushState;
+    history.replaceState = originalReplaceState;
+    document.removeEventListener('click', handleDocumentClick, true);
     globalThis.removeEventListener('popstate', notifyWhenChanged);
     globalThis.removeEventListener('hashchange', notifyWhenChanged);
-    globalThis.clearInterval(timer);
+    globalThis.clearInterval(fallbackTimer);
+    if (scheduledCheck !== null) {
+      globalThis.clearTimeout(scheduledCheck);
+    }
   };
 }
 
 async function createDetectorUi(ctx: ContentScriptContext): Promise<ShadowRootContentScriptUi<Root>> {
-  console.info('[low-effort-post-alarm] shadow:create:start');
   const ui = await createShadowRootUi<Root>(ctx, {
     name: 'low-effort-post-alarm',
     position: 'inline',
     anchor: 'body',
     isolateEvents: true,
     onMount(container: HTMLElement) {
-      console.info('[low-effort-post-alarm] shadow:onMount', {
-        childCount: container.childElementCount,
-        tagName: container.tagName,
-      });
       const mountPoint = document.createElement('div');
       mountPoint.id = 'low-effort-post-alarm-root';
       Object.assign(mountPoint.style, {
@@ -102,26 +158,18 @@ async function createDetectorUi(ctx: ContentScriptContext): Promise<ShadowRootCo
       container.append(mountPoint);
 
       const root = ReactDOM.createRoot(mountPoint);
-      console.info('[low-effort-post-alarm] react:root-created');
       root.render(
-        <StrictMode>
-          <DetectorProvider>
-            <DetectorPanel />
-          </DetectorProvider>
-        </StrictMode>,
+        <DetectorProvider>
+          <DetectorPanel />
+        </DetectorProvider>,
       );
-      console.info('[low-effort-post-alarm] react:render-dispatched');
 
       return root;
     },
     onRemove(root: Root | undefined) {
-      console.info('[low-effort-post-alarm] shadow:onRemove', {
-        hasRoot: Boolean(root),
-      });
       root?.unmount();
     },
   });
-  console.info('[low-effort-post-alarm] shadow:create:done');
 
   Object.assign(ui.shadowHost.style, {
     position: 'static',
@@ -145,14 +193,9 @@ export default defineContentScript({
   cssInjectionMode: 'ui',
   runAt: 'document_idle',
   async main(ctx: ContentScriptContext) {
-    console.info('[low-effort-post-alarm] content script starting on', globalThis.location.href);
-    console.info('[low-effort-post-alarm] dom:ready', {
-      body: Boolean(document.body),
-      readyState: document.readyState,
-    });
-
     let ui: ShadowRootContentScriptUi<Root> | null = null;
     let uiPromise: Promise<ShadowRootContentScriptUi<Root>> | null = null;
+    let mountedHref: string | null = null;
     let syncVersion = 0;
 
     const ensureUi = async () => {
@@ -177,16 +220,13 @@ export default defineContentScript({
 
     const syncUiForRoute = async () => {
       const currentVersion = ++syncVersion;
+      const activeHref = globalThis.location.href;
       const activePath = globalThis.location.pathname;
       const canRunOnRoute = shouldRunOnPath(activePath);
 
-      console.info('[low-effort-post-alarm] route:sync', {
-        canRunOnRoute,
-        pathname: activePath,
-      });
-
       if (!canRunOnRoute) {
         ui?.remove();
+        mountedHref = null;
         return;
       }
 
@@ -195,24 +235,16 @@ export default defineContentScript({
         return;
       }
 
-      if (detectorUi.mounted) {
+      if (detectorUi.mounted && mountedHref === activeHref) {
         return;
       }
 
-      console.info('[low-effort-post-alarm] shadow:mount:start');
-      detectorUi.mount();
-      console.info('[low-effort-post-alarm] shadow:mount:done', {
-        hostConnected: detectorUi.shadowHost.isConnected,
-      });
+      if (detectorUi.mounted) {
+        detectorUi.remove();
+      }
 
-      globalThis.setTimeout(() => {
-        console.info('[low-effort-post-alarm] shadow:post-mount-check', {
-          hostConnected: detectorUi.shadowHost.isConnected,
-          hostTag: detectorUi.shadowHost.tagName,
-          root: detectorUi.shadow.getElementById('low-effort-post-alarm-root') ? 'found' : 'missing',
-          rootChildren: detectorUi.uiContainer.childElementCount,
-        });
-      }, 1500);
+      detectorUi.mount();
+      mountedHref = activeHref;
     };
 
     try {

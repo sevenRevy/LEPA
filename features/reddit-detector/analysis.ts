@@ -1,7 +1,9 @@
 import { DETECTOR_CONFIG } from '@/features/reddit-detector/config';
 import type {
   AuthorAnalysis,
+  DetectorHistoryEntry,
   DetectorReport,
+  DetectorPostSummary,
   MatchResult,
   RedditAboutResponse,
   RedditCommentData,
@@ -193,6 +195,111 @@ export function formatAgeDays(days: number) {
   if (days < 30) return `${days.toFixed(1)}d`;
   if (days < 365) return `${(days / 30.44).toFixed(1)}mo`;
   return `${(days / 365.25).toFixed(1)}y`;
+}
+
+function isModeratorRemoved(post: RedditPostData) {
+  const removalCategory = post.removed_by_category?.toLowerCase();
+  const bannedBy = post.banned_by?.toLowerCase();
+
+  return (
+    removalCategory === 'moderator' ||
+    bannedBy === 'true' ||
+    Boolean(post.mod_reason_title) ||
+    (Boolean(post.removal_reason) && removalCategory === 'moderator')
+  );
+}
+
+function isDeletedPost(post: RedditPostData) {
+  return post.author === '[deleted]' || post.selftext?.trim().toLowerCase() === '[deleted]';
+}
+
+function formatHistoryAge(createdUtc?: number) {
+  if (!createdUtc) return 'Unknown age';
+
+  const ageDays = (Date.now() - createdUtc * 1000) / 86_400_000;
+  return `${formatAgeDays(ageDays)} ago`;
+}
+
+function titleFromPermalink(permalink?: string) {
+  if (!permalink) return null;
+
+  const segments = permalink.split('/').filter(Boolean);
+  const commentsIndex = segments.findIndex((segment) => segment === 'comments');
+  const slug = commentsIndex >= 0 ? segments[commentsIndex + 2] : segments.at(-1);
+
+  if (!slug) return null;
+
+  return decodeURIComponent(slug).replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim() || null;
+}
+
+function sanitizeRecoveredTitle(title?: string | null) {
+  const normalizedTitle = title?.trim();
+
+  if (!normalizedTitle) return null;
+
+  const lowered = normalizedTitle.toLowerCase();
+  const canonicalPlaceholder = lowered.replace(/[\[\]\s]+/g, ' ').trim();
+
+  if (
+    lowered === '[removed]' ||
+    lowered === '[deleted]' ||
+    canonicalPlaceholder === 'removed' ||
+    canonicalPlaceholder === 'deleted' ||
+    canonicalPlaceholder === 'removed by moderator'
+  ) {
+    return null;
+  }
+
+  return normalizedTitle;
+}
+
+function resolveHistoryTitle(post: RedditPostData, removed: boolean, deleted: boolean) {
+  const baseTitle =
+    sanitizeRecoveredTitle(post.title) ?? sanitizeRecoveredTitle(titleFromPermalink(post.permalink));
+
+  if (removed) {
+    return baseTitle ? `${baseTitle} [ Removed by moderator ]` : '[ Removed by moderator ]';
+  }
+
+  if (deleted) {
+    return baseTitle ? `${baseTitle} [ Deleted ]` : '[ Deleted ]';
+  }
+
+  return baseTitle ?? 'Untitled post';
+}
+
+function buildHistoryEntries(
+  post: RedditPostData,
+  submitted: RedditListingResponse<RedditPostData> | null,
+): DetectorHistoryEntry[] {
+  const submittedPosts =
+    submitted?.data?.children
+      ?.filter((child) => child.kind === 't3')
+      .map((child) => child.data)
+      .filter((candidate): candidate is RedditPostData => Boolean(candidate) && Boolean(candidate.title)) ?? [];
+
+  const currentPost = submittedPosts.find((candidate) => candidate.name === post.name) ?? post;
+  const orderedPosts = [
+    currentPost,
+    ...submittedPosts.filter((candidate) => candidate.name !== currentPost.name),
+  ];
+
+  return orderedPosts.map((candidate) => {
+    const isCurrent = candidate.name === post.name;
+    const removed = isModeratorRemoved(candidate);
+    const deleted = isDeletedPost(candidate);
+
+    return {
+      href: candidate.permalink ? `${globalThis.location.origin}${candidate.permalink}` : null,
+      id: candidate.name ?? `${candidate.title}-${candidate.created_utc ?? 0}`,
+      isCurrent,
+      statusLabel: isCurrent ? 'Current' : removed ? 'Removed' : deleted ? 'Deleted' : 'Visible',
+      statusTone: isCurrent ? 'default' : removed ? 'destructive' : 'outline',
+      subreddit: candidate.subreddit_name_prefixed ?? `r/${candidate.subreddit}`,
+      title: resolveHistoryTitle(candidate, removed, deleted),
+      when: formatHistoryAge(candidate.created_utc),
+    };
+  });
 }
 
 export function classifyScore(score: number): ScoreLevel {
@@ -637,15 +744,18 @@ export function buildDetectorReport(
   const author = analyzeAuthor(post, about, submitted, comments);
   const totalScore = title.points + author.points;
   const clampedScore = Math.max(0, Math.min(100, Math.round(totalScore)));
+  const postSummary: DetectorPostSummary = {
+    author: post.author,
+    name: post.name,
+    score: post.score ?? null,
+  };
 
   return {
-    about,
     author,
     clampedScore,
-    comments,
+    history: buildHistoryEntries(post, submitted),
     level: classifyScore(clampedScore),
-    post,
-    submitted,
+    post: postSummary,
     title,
     totalScore,
     verdict: buildVerdict(clampedScore),

@@ -15,16 +15,14 @@ import {
   UserRoundIcon,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import type { VariantProps } from 'class-variance-authority';
 
-import { Badge, badgeVariants } from '@/components/ui/badge';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { formatAgeDays } from '@/features/reddit-detector/analysis';
 import { getCurrentDetectorReport } from '@/features/reddit-detector/api';
-import type { DetectorReport, RedditPostData } from '@/features/reddit-detector/types';
 
 type PanelState = 'warning' | 'neutral' | 'calm';
 type ScoreTone = 'high' | 'medium' | 'low' | 'neutral';
@@ -139,110 +137,6 @@ function getApproximateScoreRange(score: number) {
   };
 }
 
-function isModeratorRemoved(post: RedditPostData) {
-  const removalCategory = post.removed_by_category?.toLowerCase();
-  const bannedBy = post.banned_by?.toLowerCase();
-
-  return (
-    removalCategory === 'moderator' ||
-    bannedBy === 'true' ||
-    Boolean(post.mod_reason_title) ||
-    (Boolean(post.removal_reason) && removalCategory === 'moderator')
-  );
-}
-
-function isDeletedPost(post: RedditPostData) {
-  return post.author === '[deleted]' || post.selftext?.trim().toLowerCase() === '[deleted]';
-}
-
-function formatHistoryAge(createdUtc?: number) {
-  if (!createdUtc) return 'Unknown age';
-
-  const ageDays = (Date.now() - createdUtc * 1000) / 86_400_000;
-  return `${formatAgeDays(ageDays)} ago`;
-}
-
-function titleFromPermalink(permalink?: string) {
-  if (!permalink) return null;
-
-  const segments = permalink.split('/').filter(Boolean);
-  const commentsIndex = segments.findIndex((segment) => segment === 'comments');
-  const slug = commentsIndex >= 0 ? segments[commentsIndex + 2] : segments.at(-1);
-
-  if (!slug) return null;
-
-  return decodeURIComponent(slug).replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim() || null;
-}
-
-function sanitizeRecoveredTitle(title?: string | null) {
-  const normalizedTitle = title?.trim();
-
-  if (!normalizedTitle) return null;
-
-  const lowered = normalizedTitle.toLowerCase();
-  const canonicalPlaceholder = lowered.replace(/[\[\]\s]+/g, ' ').trim();
-
-  if (
-    lowered === '[removed]' ||
-    lowered === '[deleted]' ||
-    canonicalPlaceholder === 'removed' ||
-    canonicalPlaceholder === 'deleted' ||
-    canonicalPlaceholder === 'removed by moderator'
-  ) {
-    return null;
-  }
-
-  return normalizedTitle;
-}
-
-function resolveHistoryTitle(post: RedditPostData, removed: boolean, deleted: boolean) {
-  const baseTitle =
-    sanitizeRecoveredTitle(post.title) ?? sanitizeRecoveredTitle(titleFromPermalink(post.permalink));
-
-  if (removed) {
-    return baseTitle ? `${baseTitle} [ Removed by moderator ]` : '[ Removed by moderator ]';
-  }
-
-  if (deleted) {
-    return baseTitle ? `${baseTitle} [ Deleted ]` : '[ Deleted ]';
-  }
-
-  return baseTitle ?? 'Untitled post';
-}
-
-function buildHistorySlides(report: DetectorReport) {
-  const submittedPosts =
-    report.submitted?.data?.children
-      ?.filter((child) => child.kind === 't3')
-      .map((child) => child.data)
-      .filter((post): post is RedditPostData => Boolean(post) && Boolean(post.title)) ?? [];
-
-  const currentPost = submittedPosts.find((post) => post.name === report.post.name) ?? report.post;
-  const orderedPosts = [
-    currentPost,
-    ...submittedPosts.filter((post) => post.name !== currentPost.name),
-  ];
-
-  return orderedPosts.map((post) => {
-    const current = post.name === report.post.name;
-    const removed = isModeratorRemoved(post);
-    const deleted = isDeletedPost(post);
-    const statusTone: VariantProps<typeof badgeVariants>['variant'] =
-      current ? 'default' : removed ? 'destructive' : 'outline';
-
-    return {
-      href: post.permalink ? `${globalThis.location.origin}${post.permalink}` : null,
-      id: post.name ?? `${post.title}-${post.created_utc ?? 0}`,
-      isCurrent: current,
-      statusLabel: current ? 'Current' : removed ? 'Removed' : deleted ? 'Deleted' : 'Visible',
-      statusTone,
-      subreddit: post.subreddit_name_prefixed ?? `r/${post.subreddit}`,
-      title: resolveHistoryTitle(post, removed, deleted),
-      when: formatHistoryAge(post.created_utc),
-    };
-  });
-}
-
 function StatRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-4 text-sm">
@@ -263,15 +157,6 @@ export function DetectorPanel() {
   });
 
   useEffect(() => {
-    console.info('[low-effort-post-alarm] panel:query-state', {
-      hasData: Boolean(query.data),
-      isError: query.isError,
-      isPending: query.isPending,
-      status: query.status,
-    });
-  }, [query.data, query.isError, query.isPending, query.status]);
-
-  useEffect(() => {
     if (query.error) {
       console.error('[low-effort-post-alarm] panel:error', query.error);
     }
@@ -281,7 +166,7 @@ export function DetectorPanel() {
   const reasons = report ? [...report.title.reasons, ...report.author.reasons].slice(0, 12) : [];
   const lowConfidenceReasons = reasons.filter(isLowConfidenceReason);
   const substantiveReasons = reasons.filter((reason) => !isLowConfidenceReason(reason));
-  const historySlides = report ? buildHistorySlides(report) : [];
+  const historySlides = report?.history ?? [];
   const subredditFrequencies = report?.author.subredditFrequencies.slice(0, 6) ?? [];
   const activeHistorySlide = historySlides[historyIndex] ?? null;
   const hasSubstantiveFlagReasons = substantiveReasons.length > 0;

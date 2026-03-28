@@ -26,19 +26,12 @@ function safeUrl(rawUrl: string) {
 
 async function fetchJson<TData>(rawUrl: string): Promise<TData> {
   const requestUrl = safeUrl(rawUrl);
-  console.info('[low-effort-post-alarm] fetch:start', requestUrl);
 
   const response = await fetch(requestUrl, {
     credentials: 'include',
     headers: {
       Accept: 'application/json',
     },
-  });
-
-  console.info('[low-effort-post-alarm] fetch:response', {
-    ok: response.ok,
-    status: response.status,
-    url: requestUrl,
   });
 
   if (!response.ok) {
@@ -118,13 +111,7 @@ async function getAuthorDataOrNull<TData>(
 }
 
 export async function getCurrentDetectorReport(): Promise<DetectorReport> {
-  console.info('[low-effort-post-alarm] report:start');
   const post = await getPostData();
-  console.info('[low-effort-post-alarm] report:post', {
-    author: post.author,
-    subreddit: post.subreddit,
-    title: post.title,
-  });
 
   if (!post.author || post.author === '[deleted]') {
     throw new Error('Post author is deleted or unavailable');
@@ -135,14 +122,6 @@ export async function getCurrentDetectorReport(): Promise<DetectorReport> {
     getAuthorDataOrNull('comments', getUserComments(post.author)),
     getAuthorDataOrNull('submitted', getUserSubmitted(post.author)),
   ]);
-
-  console.info('[low-effort-post-alarm] report:author-data', {
-    aboutAvailable: Boolean(about?.data),
-    commentsAvailable: comments !== null,
-    commentsCount: comments?.data?.children?.length ?? null,
-    submittedAvailable: submitted !== null,
-    submittedCount: submitted?.data?.children?.length ?? null,
-  });
 
   return buildDetectorReport(post, about, submitted, comments);
 }
