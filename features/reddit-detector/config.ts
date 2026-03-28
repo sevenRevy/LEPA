@@ -1,6 +1,7 @@
 export const DETECTOR_CONFIG = {
   recentPostsToInspect: 40,
   sameSubredditDominanceThreshold: 0.7,
+  sameSubredditActivityThreshold: 0.5,
   highPostsPerDayThreshold: 8,
   veryHighPostsPerDayThreshold: 15,
   newAccountDays: 180,

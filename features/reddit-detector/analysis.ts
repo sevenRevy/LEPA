@@ -327,6 +327,38 @@ function buildSubredditFrequencyRows(
     });
 }
 
+function getDominantSubredditActivity(subredditFrequencies: SubredditFrequencyRow[]) {
+  const totalActivity = subredditFrequencies.reduce(
+    (sum, entry) => sum + entry.postCount + entry.commentCount,
+    0,
+  );
+
+  if (totalActivity === 0) {
+    return null;
+  }
+
+  let dominantEntry: SubredditFrequencyRow | null = null;
+  let dominantCount = 0;
+
+  for (const entry of subredditFrequencies) {
+    const entryCount = entry.postCount + entry.commentCount;
+    if (entryCount > dominantCount) {
+      dominantEntry = entry;
+      dominantCount = entryCount;
+    }
+  }
+
+  if (!dominantEntry) {
+    return null;
+  }
+
+  return {
+    entry: dominantEntry,
+    ratio: dominantCount / totalActivity,
+    totalActivity,
+  };
+}
+
 export function analyzeTitleAndBody(post: RedditPostData): TitleBodyAnalysis {
   const title = post.title ?? '';
   const body = post.selftext ?? '';
@@ -407,6 +439,7 @@ export function analyzeAuthor(
   const moderatorRemovedPosts = sampledPosts.filter(isModeratorRemovedSubmission);
   const historyComparisonPosts = sampledPosts.filter((candidate) => candidate.name !== post.name);
   const subredditFrequencies = buildSubredditFrequencyRows(submitted, comments);
+  const dominantSubredditActivity = getDominantSubredditActivity(subredditFrequencies);
 
   let accountAgeDays: number | null = null;
   let burstPostCount: number | null = null;
@@ -448,6 +481,17 @@ export function analyzeAuthor(
       points += 2;
       reasons.push(
         'Only one visible post was found in recent history, so history-based signals have a wide margin of error',
+      );
+    }
+
+    if (
+      dominantSubredditActivity &&
+      dominantSubredditActivity.totalActivity >= 2 &&
+      dominantSubredditActivity.ratio > DETECTOR_CONFIG.sameSubredditActivityThreshold
+    ) {
+      points += 6;
+      reasons.push(
+        `Over 50% of visible activity is concentrated in ${dominantSubredditActivity.entry.subredditLabel}`,
       );
     }
 

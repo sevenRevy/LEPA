@@ -359,5 +359,8 @@ describe('detector heuristics', () => {
     });
     expect(books?.postRatio).toBeCloseTo(1 / 3, 4);
     expect(books?.commentRatio).toBeCloseTo(3 / 4, 4);
+    expect(report.author.reasons.join(' ')).toContain(
+      'Over 50% of visible activity is concentrated in r/books',
+    );
   });
 });
