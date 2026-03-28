@@ -59,11 +59,11 @@ export const DETECTOR_CONFIG = {
   ],
 } as const;
 
-export const REDDIT_POST_MATCHES = [
-  '*://reddit.com/r/*/comments/*',
-  '*://www.reddit.com/r/*/comments/*',
-  '*://old.reddit.com/r/*/comments/*',
-  '*://*.reddit.com/r/*/comments/*',
+export const REDDIT_PAGE_MATCHES = [
+  '*://reddit.com/*',
+  '*://www.reddit.com/*',
+  '*://old.reddit.com/*',
+  '*://*.reddit.com/*',
 ];
 
 export const REDDIT_POST_PATH_PATTERN = /^\/r\/[^/]+\/comments\/[^/]+/;

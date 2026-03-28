@@ -1,11 +1,14 @@
 import { StrictMode } from 'react';
 import ReactDOM, { type Root } from 'react-dom/client';
 import { ContentScriptContext } from 'wxt/utils/content-script-context';
-import { createShadowRootUi } from 'wxt/utils/content-script-ui/shadow-root';
+import {
+  createShadowRootUi,
+  type ShadowRootContentScriptUi,
+} from 'wxt/utils/content-script-ui/shadow-root';
 import { defineContentScript } from 'wxt/utils/define-content-script';
 
 import '@/assets/ui.css';
-import { REDDIT_POST_MATCHES } from '@/features/reddit-detector/config';
+import { REDDIT_PAGE_MATCHES } from '@/features/reddit-detector/config';
 import { shouldRunOnPath } from '@/features/reddit-detector/api';
 import { DetectorPanel } from '@/features/reddit-detector/components/detector-panel';
 import { DetectorProvider } from '@/features/reddit-detector/components/detector-root';
@@ -37,96 +40,188 @@ function renderMountError(error: unknown) {
   document.documentElement.append(fallback);
 }
 
-export default defineContentScript({
-  matches: REDDIT_POST_MATCHES,
-  cssInjectionMode: 'ui',
-  runAt: 'document_idle',
-  async main(ctx: ContentScriptContext) {
-    if (!shouldRunOnPath()) {
+function watchRouteChanges(onChange: () => void) {
+  let previousHref = globalThis.location.href;
+
+  const notifyWhenChanged = () => {
+    const nextHref = globalThis.location.href;
+    if (nextHref === previousHref) {
       return;
     }
 
+    previousHref = nextHref;
+    onChange();
+  };
+
+  const observer = new MutationObserver(() => {
+    notifyWhenChanged();
+  });
+
+  observer.observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+  });
+
+  globalThis.addEventListener('popstate', notifyWhenChanged);
+  globalThis.addEventListener('hashchange', notifyWhenChanged);
+
+  const timer = globalThis.setInterval(notifyWhenChanged, 500);
+
+  return () => {
+    observer.disconnect();
+    globalThis.removeEventListener('popstate', notifyWhenChanged);
+    globalThis.removeEventListener('hashchange', notifyWhenChanged);
+    globalThis.clearInterval(timer);
+  };
+}
+
+async function createDetectorUi(ctx: ContentScriptContext): Promise<ShadowRootContentScriptUi<Root>> {
+  console.info('[low-effort-post-alarm] shadow:create:start');
+  const ui = await createShadowRootUi<Root>(ctx, {
+    name: 'low-effort-post-alarm',
+    position: 'inline',
+    anchor: 'body',
+    isolateEvents: true,
+    onMount(container: HTMLElement) {
+      console.info('[low-effort-post-alarm] shadow:onMount', {
+        childCount: container.childElementCount,
+        tagName: container.tagName,
+      });
+      const mountPoint = document.createElement('div');
+      mountPoint.id = 'low-effort-post-alarm-root';
+      Object.assign(mountPoint.style, {
+        position: 'fixed',
+        right: '16px',
+        bottom: '16px',
+        zIndex: '2147483647',
+        width: 'min(384px, calc(100vw - 16px))',
+        maxWidth: 'calc(100vw - 16px)',
+        display: 'block',
+        pointerEvents: 'auto',
+      });
+      container.append(mountPoint);
+
+      const root = ReactDOM.createRoot(mountPoint);
+      console.info('[low-effort-post-alarm] react:root-created');
+      root.render(
+        <StrictMode>
+          <DetectorProvider>
+            <DetectorPanel />
+          </DetectorProvider>
+        </StrictMode>,
+      );
+      console.info('[low-effort-post-alarm] react:render-dispatched');
+
+      return root;
+    },
+    onRemove(root: Root | undefined) {
+      console.info('[low-effort-post-alarm] shadow:onRemove', {
+        hasRoot: Boolean(root),
+      });
+      root?.unmount();
+    },
+  });
+  console.info('[low-effort-post-alarm] shadow:create:done');
+
+  Object.assign(ui.shadowHost.style, {
+    position: 'static',
+    display: 'block',
+    width: '0',
+    height: '0',
+  });
+
+  Object.assign(ui.uiContainer.style, {
+    position: 'static',
+    display: 'block',
+    width: '0',
+    height: '0',
+  });
+
+  return ui;
+}
+
+export default defineContentScript({
+  matches: REDDIT_PAGE_MATCHES,
+  cssInjectionMode: 'ui',
+  runAt: 'document_idle',
+  async main(ctx: ContentScriptContext) {
     console.info('[low-effort-post-alarm] content script starting on', globalThis.location.href);
     console.info('[low-effort-post-alarm] dom:ready', {
       body: Boolean(document.body),
       readyState: document.readyState,
     });
 
-    try {
-      console.info('[low-effort-post-alarm] shadow:create:start');
-      const ui = await createShadowRootUi<Root>(ctx, {
-        name: 'low-effort-post-alarm',
-        position: 'inline',
-        anchor: 'body',
-        isolateEvents: true,
-        onMount(container: HTMLElement) {
-          console.info('[low-effort-post-alarm] shadow:onMount', {
-            childCount: container.childElementCount,
-            tagName: container.tagName,
-          });
-          const mountPoint = document.createElement('div');
-          mountPoint.id = 'low-effort-post-alarm-root';
-          Object.assign(mountPoint.style, {
-            position: 'fixed',
-            right: '16px',
-            bottom: '16px',
-            zIndex: '2147483647',
-            width: 'min(384px, calc(100vw - 16px))',
-            maxWidth: 'calc(100vw - 16px)',
-            display: 'block',
-            pointerEvents: 'auto',
-          });
-          container.append(mountPoint);
+    let ui: ShadowRootContentScriptUi<Root> | null = null;
+    let uiPromise: Promise<ShadowRootContentScriptUi<Root>> | null = null;
+    let syncVersion = 0;
 
-          const root = ReactDOM.createRoot(mountPoint);
-          console.info('[low-effort-post-alarm] react:root-created');
-          root.render(
-            <StrictMode>
-              <DetectorProvider>
-                <DetectorPanel />
-              </DetectorProvider>
-            </StrictMode>,
-          );
-          console.info('[low-effort-post-alarm] react:render-dispatched');
+    const ensureUi = async () => {
+      if (ui) {
+        return ui;
+      }
 
-          return root;
-        },
-        onRemove(root: Root | undefined) {
-          console.info('[low-effort-post-alarm] shadow:onRemove', {
-            hasRoot: Boolean(root),
+      if (!uiPromise) {
+        uiPromise = createDetectorUi(ctx)
+          .then((createdUi) => {
+            ui = createdUi;
+            return createdUi;
+          })
+          .catch((error) => {
+            uiPromise = null;
+            throw error;
           });
-          root?.unmount();
-        },
-      });
-      console.info('[low-effort-post-alarm] shadow:create:done');
+      }
 
-      Object.assign(ui.shadowHost.style, {
-        position: 'static',
-        display: 'block',
-        width: '0',
-        height: '0',
+      return uiPromise;
+    };
+
+    const syncUiForRoute = async () => {
+      const currentVersion = ++syncVersion;
+      const activePath = globalThis.location.pathname;
+      const canRunOnRoute = shouldRunOnPath(activePath);
+
+      console.info('[low-effort-post-alarm] route:sync', {
+        canRunOnRoute,
+        pathname: activePath,
       });
 
-      Object.assign(ui.uiContainer.style, {
-        position: 'static',
-        display: 'block',
-        width: '0',
-        height: '0',
-      });
+      if (!canRunOnRoute) {
+        ui?.remove();
+        return;
+      }
+
+      const detectorUi = await ensureUi();
+      if (currentVersion !== syncVersion || !shouldRunOnPath(globalThis.location.pathname)) {
+        return;
+      }
+
+      if (detectorUi.mounted) {
+        return;
+      }
+
       console.info('[low-effort-post-alarm] shadow:mount:start');
-      ui.mount();
+      detectorUi.mount();
       console.info('[low-effort-post-alarm] shadow:mount:done', {
-        hostConnected: ui.shadowHost.isConnected,
+        hostConnected: detectorUi.shadowHost.isConnected,
       });
 
-      window.setTimeout(() => {
+      globalThis.setTimeout(() => {
         console.info('[low-effort-post-alarm] shadow:post-mount-check', {
-          hostConnected: ui.shadowHost.isConnected,
-          hostTag: ui.shadowHost.tagName,
-          root: ui.shadow.getElementById('low-effort-post-alarm-root') ? 'found' : 'missing',
-          rootChildren: ui.uiContainer.childElementCount,
+          hostConnected: detectorUi.shadowHost.isConnected,
+          hostTag: detectorUi.shadowHost.tagName,
+          root: detectorUi.shadow.getElementById('low-effort-post-alarm-root') ? 'found' : 'missing',
+          rootChildren: detectorUi.uiContainer.childElementCount,
         });
       }, 1500);
+    };
+
+    try {
+      const stopWatchingRoutes = watchRouteChanges(() => {
+        void syncUiForRoute().catch(renderMountError);
+      });
+      ctx.onInvalidated(stopWatchingRoutes);
+
+      await syncUiForRoute();
     } catch (error) {
       renderMountError(error);
     }
