@@ -47,6 +47,41 @@ function displayPostFrequency(count: number | null) {
   return 'Low';
 }
 
+function compactReasonLabel(reason: string) {
+  if (reason.startsWith('Very new account')) return reason;
+  if (reason.startsWith('New account')) return reason;
+  if (reason.includes('Only one visible post was found in recent history')) {
+    return '1 visible post (low confidence)';
+  }
+  if (reason.includes('removed by moderators')) return reason;
+  if (reason.startsWith('Very low combined karma')) {
+    return reason.replace('combined karma', 'karma');
+  }
+  if (reason.startsWith('Low combined karma')) {
+    return reason.replace('combined karma', 'karma');
+  }
+  if (reason.includes('sampled posts landed within')) {
+    return reason.replace('sampled posts landed within', 'Burst posting in');
+  }
+  if (reason.startsWith('Repeated similar titles in recent posts')) {
+    return reason.replace('Repeated similar titles in recent posts', 'Repeated titles');
+  }
+  if (reason === 'At least one very similar recent title') return 'Repeated title pattern';
+  if (reason.startsWith('Most recent posts heavily concentrated in')) {
+    return reason.replace('Most recent posts heavily concentrated in', 'Subreddit concentration');
+  }
+  if (reason.startsWith('Bait-like phrases found:')) return 'Bait phrases';
+  if (reason.startsWith('Low-effort title patterns:')) return 'Low-effort title';
+  return reason;
+}
+
+function getApproximateScoreRange(score: number) {
+  return {
+    high: Math.min(100, score + 4),
+    low: Math.max(0, score - 4),
+  };
+}
+
 function isModeratorRemoved(post: RedditPostData) {
   const removalCategory = post.removed_by_category?.toLowerCase();
   const bannedBy = post.banned_by?.toLowerCase();
@@ -162,6 +197,7 @@ function StatRow({ label, value }: { label: string; value: string }) {
 
 export function DetectorPanel() {
   const [historyIndex, setHistoryIndex] = useState(0);
+  const [scoreRangeFrame, setScoreRangeFrame] = useState<'low' | 'high'>('low');
   const query = useQuery({
     queryKey: ['reddit-detector', globalThis.location.pathname],
     queryFn: getCurrentDetectorReport,
@@ -187,6 +223,17 @@ export function DetectorPanel() {
   const historySlides = report ? buildHistorySlides(report) : [];
   const activeHistorySlide = historySlides[historyIndex] ?? null;
   const hasFlagReasons = reasons.length > 0;
+  const hasThinHistorySample =
+    report?.author.meta.sampledPosts !== null &&
+    report?.author.meta.sampledPosts !== undefined &&
+    report.author.meta.sampledPosts <= 1;
+  const scoreRange = report && hasThinHistorySample ? getApproximateScoreRange(report.clampedScore) : null;
+  const displayedScore =
+    report && scoreRange
+      ? scoreRangeFrame === 'low'
+        ? scoreRange.low
+        : scoreRange.high
+      : report?.clampedScore ?? 0;
 
   useEffect(() => {
     setHistoryIndex((currentIndex) => {
@@ -197,6 +244,21 @@ export function DetectorPanel() {
       return Math.min(currentIndex, historySlides.length - 1);
     });
   }, [historySlides.length, report?.post.name]);
+
+  useEffect(() => {
+    if (!scoreRange || scoreRange.low === scoreRange.high) {
+      setScoreRangeFrame('low');
+      return;
+    }
+
+    const timer = globalThis.setInterval(() => {
+      setScoreRangeFrame((currentFrame) => (currentFrame === 'low' ? 'high' : 'low'));
+    }, 1100);
+
+    return () => {
+      globalThis.clearInterval(timer);
+    };
+  }, [scoreRange?.high, scoreRange?.low]);
 
   return (
     <motion.div
@@ -232,15 +294,42 @@ export function DetectorPanel() {
           {report ? (
             <div className="space-y-3">
               <div className="flex items-center gap-3">
-                <Badge variant={scoreTone(report.clampedScore)}>{report.clampedScore}/100</Badge>
+                <Badge
+                  className={
+                    hasThinHistorySample
+                      ? 'border border-amber-300/20 bg-amber-400/10 text-amber-100'
+                      : undefined
+                  }
+                  variant={scoreTone(report.clampedScore)}
+                >
+                  <motion.span
+                    animate={{ opacity: 1, y: 0 }}
+                    initial={{ opacity: 0.45, y: 3 }}
+                    key={displayedScore}
+                    transition={{ duration: 0.2, ease: 'easeOut' }}
+                  >
+                    {hasThinHistorySample ? `~${displayedScore}/100` : `${displayedScore}/100`}
+                  </motion.span>
+                </Badge>
                 <div className="min-w-0 flex-1">
                   <Progress
+                    className={
+                      hasThinHistorySample
+                        ? 'ring-1 ring-amber-300/10 ring-inset bg-[repeating-linear-gradient(90deg,rgba(251,191,36,0.10)_0_10px,transparent_10px_20px)]'
+                        : undefined
+                    }
                     indicatorClassName={
                       report.clampedScore >= 70
-                        ? 'bg-destructive'
+                        ? hasThinHistorySample
+                          ? 'bg-destructive/85'
+                          : 'bg-destructive'
                         : report.clampedScore >= 45
-                          ? 'bg-primary'
-                          : 'bg-emerald-400'
+                          ? hasThinHistorySample
+                            ? 'bg-primary/85'
+                            : 'bg-primary'
+                          : hasThinHistorySample
+                            ? 'bg-emerald-400/85'
+                            : 'bg-emerald-400'
                     }
                     value={report.clampedScore}
                   />
@@ -403,11 +492,17 @@ export function DetectorPanel() {
                   </div>
 
                   {hasFlagReasons ? (
-                    <ul className="flex list-disc flex-col gap-2 pl-5 text-sm text-muted-foreground">
+                    <div className="flex flex-wrap gap-2">
                       {reasons.map((reason) => (
-                        <li key={reason}>{reason}</li>
+                        <Badge
+                          className="max-w-full normal-case whitespace-normal text-left leading-5"
+                          key={reason}
+                          variant="outline"
+                        >
+                          {compactReasonLabel(reason)}
+                        </Badge>
                       ))}
-                    </ul>
+                    </div>
                   ) : (
                     <p className="text-sm text-muted-foreground">
                       No major red flags were found in this post.

@@ -155,8 +155,10 @@ describe('detector heuristics', () => {
 
     const report = buildDetectorReport(post, about, buildSubmitted([post]));
 
-    expect(report.author.reasons.join(' ')).toContain('Only one visible post was found in recent history');
-    expect(report.author.points).toBeGreaterThanOrEqual(4);
+    expect(report.author.reasons.join(' ')).toContain(
+      'Only one visible post was found in recent history, so history-based signals have a wide margin of error',
+    );
+    expect(report.author.points).toBeGreaterThanOrEqual(2);
   });
 
   it('shows 50% same-subreddit ratio when one of two sampled posts matches the current subreddit', () => {

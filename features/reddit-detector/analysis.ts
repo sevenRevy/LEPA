@@ -348,8 +348,10 @@ export function analyzeAuthor(
     }
 
     if (sampledPosts.length === 1) {
-      points += 4;
-      reasons.push('Only one visible post was found in recent history');
+      points += 2;
+      reasons.push(
+        'Only one visible post was found in recent history, so history-based signals have a wide margin of error',
+      );
     }
 
     postsPerDay = 0;
