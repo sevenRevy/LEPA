@@ -257,12 +257,6 @@ export function analyzeTitleAndBody(post: RedditPostData): TitleBodyAnalysis {
     reasons.push(`Low-effort title patterns: ${lowEffort.hits.slice(0, 6).join(', ')}`);
   }
 
-  const normalizedTitle = normalizeText(title);
-  if (normalizedTitle.length > 0 && normalizedTitle.length < 12) {
-    points += 8;
-    reasons.push('Very short title');
-  }
-
   const questionMarks = (title.match(/\?/g) || []).length;
   const exclamationMarks = (title.match(/!/g) || []).length;
   if (questionMarks >= 2 || exclamationMarks >= 2) {
