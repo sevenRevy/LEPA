@@ -24,10 +24,31 @@ import { formatAgeDays } from '@/features/reddit-detector/analysis';
 import { getCurrentDetectorReport } from '@/features/reddit-detector/api';
 import type { DetectorReport, RedditPostData } from '@/features/reddit-detector/types';
 
-function scoreTone(score: number) {
-  if (score >= 70) return 'destructive';
-  if (score >= 45) return 'secondary';
-  return 'default';
+function scoreVisualTone(score: number, hasFlagReasons: boolean) {
+  if (score >= 70) return 'high';
+  if (score >= 45) return 'medium';
+  if (hasFlagReasons) return 'medium';
+  return 'low';
+}
+
+function scoreChipClass(score: number, approximate: boolean, hasFlagReasons: boolean) {
+  const tone = scoreVisualTone(score, hasFlagReasons);
+
+  if (tone === 'high') {
+    return approximate
+      ? 'border border-red-300/20 bg-red-400/10 text-red-100'
+      : 'border border-red-300/20 bg-red-400/12 text-red-100';
+  }
+
+  if (tone === 'medium') {
+    return approximate
+      ? 'border border-amber-300/20 bg-amber-400/10 text-amber-100'
+      : 'border border-amber-300/20 bg-amber-400/12 text-amber-100';
+  }
+
+  return approximate
+    ? 'border border-emerald-300/20 bg-emerald-400/10 text-emerald-100'
+    : 'border border-emerald-300/20 bg-emerald-400/12 text-emerald-100';
 }
 
 function percentage(value: number | null) {
@@ -52,6 +73,9 @@ function compactReasonLabel(reason: string) {
   if (reason.startsWith('New account')) return reason;
   if (reason.includes('Only one visible post was found in recent history')) {
     return '1 visible post (low confidence)';
+  }
+  if (reason.includes('Author profile is private or unavailable')) {
+    return 'Profile hidden (low confidence)';
   }
   if (reason.includes('removed by moderators')) return reason;
   if (reason.startsWith('Very low combined karma')) {
@@ -227,7 +251,13 @@ export function DetectorPanel() {
     report?.author.meta.sampledPosts !== null &&
     report?.author.meta.sampledPosts !== undefined &&
     report.author.meta.sampledPosts <= 1;
-  const scoreRange = report && hasThinHistorySample ? getApproximateScoreRange(report.clampedScore) : null;
+  const hasProfileGap = report?.author.meta.authorSignalsAvailable === false;
+  const hasHiddenPosts =
+    report?.author.meta.submittedAvailable === false || report?.author.meta.sampledPosts === 0;
+  const hasScoreMarginOfError = hasThinHistorySample || hasProfileGap;
+  const isCalmState = Boolean(report) && !hasFlagReasons;
+  const scoreRange =
+    report && hasScoreMarginOfError ? getApproximateScoreRange(report.clampedScore) : null;
   const displayedScore =
     report && scoreRange
       ? scoreRangeFrame === 'low'
@@ -267,12 +297,30 @@ export function DetectorPanel() {
       initial={{ opacity: 0, scale: 0.96, y: 20 }}
       transition={{ duration: 0.22, ease: 'easeOut' }}
     >
-      <Card className="overflow-hidden border-primary/15 bg-card/92">
-        <CardHeader className="gap-3 bg-gradient-to-br from-primary/18 via-card/90 to-accent/14">
+      <Card
+        className={
+          isCalmState
+            ? 'overflow-hidden border-emerald-400/15 bg-card/92'
+            : 'overflow-hidden border-primary/15 bg-card/92'
+        }
+      >
+        <CardHeader
+          className={
+            isCalmState
+              ? 'gap-3 bg-gradient-to-br from-emerald-400/14 via-card/90 to-emerald-500/6'
+              : 'gap-3 bg-gradient-to-br from-primary/18 via-card/90 to-accent/14'
+          }
+        >
           <div className="flex items-start justify-between gap-3">
             <div className="space-y-1">
-              <div className="flex items-center gap-2 text-[0.72rem] font-semibold tracking-[0.22em] text-primary uppercase">
-                <ShieldAlertIcon className="size-4" />
+              <div
+                className={
+                  isCalmState
+                    ? 'flex items-center gap-2 text-[0.72rem] font-semibold tracking-[0.22em] text-emerald-300 uppercase'
+                    : 'flex items-center gap-2 text-[0.72rem] font-semibold tracking-[0.22em] text-primary uppercase'
+                }
+              >
+                <ShieldAlertIcon className={isCalmState ? 'size-4 text-emerald-300' : 'size-4'} />
                 Low-Effort Post Alarm
               </div>
               <CardTitle className="text-lg">Reddit bait detector</CardTitle>
@@ -295,12 +343,12 @@ export function DetectorPanel() {
             <div className="space-y-3">
               <div className="flex items-center gap-3">
                 <Badge
-                  className={
-                    hasThinHistorySample
-                      ? 'border border-amber-300/20 bg-amber-400/10 text-amber-100'
-                      : undefined
-                  }
-                  variant={scoreTone(report.clampedScore)}
+                  className={scoreChipClass(
+                    report.clampedScore,
+                    hasScoreMarginOfError,
+                    hasFlagReasons,
+                  )}
+                  variant="outline"
                 >
                   <motion.span
                     animate={{ opacity: 1, y: 0 }}
@@ -308,31 +356,33 @@ export function DetectorPanel() {
                     key={displayedScore}
                     transition={{ duration: 0.2, ease: 'easeOut' }}
                   >
-                    {hasThinHistorySample ? `~${displayedScore}/100` : `${displayedScore}/100`}
+                    {hasScoreMarginOfError ? `~${displayedScore}/100` : `${displayedScore}/100`}
                   </motion.span>
                 </Badge>
                 <div className="min-w-0 flex-1">
-                  <Progress
-                    className={
-                      hasThinHistorySample
-                        ? 'ring-1 ring-amber-300/10 ring-inset bg-[repeating-linear-gradient(90deg,rgba(251,191,36,0.10)_0_10px,transparent_10px_20px)]'
+                    <Progress
+                      className={
+                        hasScoreMarginOfError
+                          ? isCalmState
+                            ? 'ring-1 ring-emerald-300/10 ring-inset bg-[repeating-linear-gradient(90deg,rgba(52,211,153,0.10)_0_10px,transparent_10px_20px)]'
+                          : 'ring-1 ring-amber-300/10 ring-inset bg-[repeating-linear-gradient(90deg,rgba(251,191,36,0.10)_0_10px,transparent_10px_20px)]'
                         : undefined
-                    }
-                    indicatorClassName={
-                      report.clampedScore >= 70
-                        ? hasThinHistorySample
-                          ? 'bg-destructive/85'
-                          : 'bg-destructive'
-                        : report.clampedScore >= 45
-                          ? hasThinHistorySample
-                            ? 'bg-primary/85'
-                            : 'bg-primary'
-                          : hasThinHistorySample
-                            ? 'bg-emerald-400/85'
-                            : 'bg-emerald-400'
-                    }
-                    value={report.clampedScore}
-                  />
+                      }
+                      indicatorClassName={
+                        scoreVisualTone(report.clampedScore, hasFlagReasons) === 'high'
+                          ? hasScoreMarginOfError
+                            ? 'bg-destructive/85'
+                            : 'bg-destructive'
+                          : scoreVisualTone(report.clampedScore, hasFlagReasons) === 'medium'
+                            ? hasScoreMarginOfError
+                              ? 'bg-primary/85'
+                              : 'bg-primary'
+                            : hasScoreMarginOfError
+                              ? 'bg-emerald-400/85'
+                              : 'bg-emerald-400'
+                      }
+                      value={report.clampedScore}
+                    />
                 </div>
               </div>
             </div>
@@ -440,7 +490,14 @@ export function DetectorPanel() {
                       transition={{ duration: 0.18, ease: 'easeOut' }}
                     >
                       <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant={activeHistorySlide.statusTone}>
+                        <Badge
+                          className={
+                            isCalmState && activeHistorySlide.isCurrent
+                              ? 'border-emerald-400/25 bg-emerald-400/12 text-emerald-100'
+                              : undefined
+                          }
+                          variant={activeHistorySlide.statusTone}
+                        >
                           {activeHistorySlide.statusLabel}
                         </Badge>
                         <Badge variant="outline">{activeHistorySlide.subreddit}</Badge>
@@ -516,7 +573,9 @@ export function DetectorPanel() {
                   <div className="space-y-4">
                     <div className="space-y-2">
                       <div className="flex items-center gap-2 text-base font-semibold text-foreground">
-                        <UserRoundIcon className="size-4 text-primary" />
+                        <UserRoundIcon
+                          className={isCalmState ? 'size-4 text-emerald-300' : 'size-4 text-primary'}
+                        />
                         Account
                       </div>
                       {!report.author.meta.authorSignalsAvailable ? (
@@ -548,13 +607,24 @@ export function DetectorPanel() {
 
                   <div
                     aria-hidden="true"
-                    className="hidden w-px self-stretch rounded-full bg-border/55 md:block"
+                    className={
+                      isCalmState
+                        ? 'hidden w-px self-stretch rounded-full bg-emerald-400/15 md:block'
+                        : 'hidden w-px self-stretch rounded-full bg-border/55 md:block'
+                    }
                   />
 
                   <div className="space-y-4">
-                    <div className="flex items-center gap-2 text-base font-semibold text-foreground">
-                      <Clock3Icon className="size-4 text-primary" />
-                      Posting behavior
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-base font-semibold text-foreground">
+                        <Clock3Icon
+                          className={isCalmState ? 'size-4 text-emerald-300' : 'size-4 text-primary'}
+                        />
+                        Posting behavior
+                      </div>
+                      {hasHiddenPosts ? (
+                        <CardDescription>Profile history is hidden or unavailable.</CardDescription>
+                      ) : null}
                     </div>
 
                     <div className="space-y-3">
