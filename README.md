@@ -1,8 +1,10 @@
-# Low-Effort Post Alarm
+# Low-Effort-Post-Alarm
 
 Low-Effort Post Alarm is a WXT browser extension that mounts a detector panel on Reddit post pages and estimates whether a post looks low-effort, spammy, or ragebait-heavy.
 
-It is not a moderation tool and it does not claim certainty. The score is a heuristic built from post text, author metadata, and recent posting behavior.
+It is not a moderation tool and it does not claim certainty. The score is a heuristic built from post text, author metadata, and recent posting behavior. 
+
+This is a side project, under construction, and so far only limited effort has been invested in it.
 
 ## What it does
 
@@ -20,7 +22,7 @@ The popup is intentionally simple. It mainly confirms that the extension is inst
 
 ## Panel states
 
-The detector panel now has three visual result states:
+The detector panel has three visual result states:
 
 - `Warning`: the extension found substantive signals that pushed the post toward a suspicious result.
 - `Inconclusive`: the extension does not have enough visible author history to make a confident call, so the panel switches to a neutral presentation instead of treating uncertainty like a warning.
@@ -103,11 +105,6 @@ npm run dev:firefox
 npm run dev:zen
 ```
 
-Notes:
-
-- `dev:firefox` and `dev:zen` both use the Firefox target.
-- The current `wxt.config.ts` maps the Firefox binary to `C:\Program Files\Zen Browser\zen.exe`. If that path does not exist on your machine, update the config before using the Firefox-targeted runner.
-
 ### Build packages
 
 ```bash
@@ -124,26 +121,6 @@ npm run zip:chrome
 
 ```bash
 npm run zip:firefox
-```
-
-## Quality checks
-
-```bash
-npm test
-```
-
-```bash
-npm run test:watch
-```
-
-```bash
-npm run typecheck
-```
-
-Recommended check before shipping changes:
-
-```bash
-npm test && npm run typecheck
 ```
 
 ## Project structure
