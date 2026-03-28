@@ -24,15 +24,35 @@ import { formatAgeDays } from '@/features/reddit-detector/analysis';
 import { getCurrentDetectorReport } from '@/features/reddit-detector/api';
 import type { DetectorReport, RedditPostData } from '@/features/reddit-detector/types';
 
-function scoreVisualTone(score: number, hasFlagReasons: boolean) {
+type PanelState = 'warning' | 'neutral' | 'calm';
+type ScoreTone = 'high' | 'medium' | 'low' | 'neutral';
+
+function isLowConfidenceReason(reason: string) {
+  return (
+    reason.includes('Only one visible post was found in recent history') ||
+    reason.includes('Author profile is private or unavailable')
+  );
+}
+
+function scoreVisualTone(
+  panelState: PanelState,
+  score: number,
+  hasSubstantiveFlagReasons: boolean,
+): ScoreTone {
+  if (panelState === 'neutral') return 'neutral';
   if (score >= 70) return 'high';
   if (score >= 45) return 'medium';
-  if (hasFlagReasons) return 'medium';
+  if (hasSubstantiveFlagReasons) return 'medium';
   return 'low';
 }
 
-function scoreChipClass(score: number, approximate: boolean, hasFlagReasons: boolean) {
-  const tone = scoreVisualTone(score, hasFlagReasons);
+function scoreChipClass(
+  panelState: PanelState,
+  score: number,
+  approximate: boolean,
+  hasSubstantiveFlagReasons: boolean,
+) {
+  const tone = scoreVisualTone(panelState, score, hasSubstantiveFlagReasons);
 
   if (tone === 'high') {
     return approximate
@@ -44,6 +64,12 @@ function scoreChipClass(score: number, approximate: boolean, hasFlagReasons: boo
     return approximate
       ? 'border border-amber-300/20 bg-amber-400/10 text-amber-100'
       : 'border border-amber-300/20 bg-amber-400/12 text-amber-100';
+  }
+
+  if (tone === 'neutral') {
+    return approximate
+      ? 'border border-slate-300/20 bg-slate-400/10 text-slate-100'
+      : 'border border-slate-300/20 bg-slate-400/12 text-slate-100';
   }
 
   return approximate
@@ -245,9 +271,11 @@ export function DetectorPanel() {
 
   const report = query.data;
   const reasons = report ? [...report.title.reasons, ...report.author.reasons].slice(0, 12) : [];
+  const lowConfidenceReasons = reasons.filter(isLowConfidenceReason);
+  const substantiveReasons = reasons.filter((reason) => !isLowConfidenceReason(reason));
   const historySlides = report ? buildHistorySlides(report) : [];
   const activeHistorySlide = historySlides[historyIndex] ?? null;
-  const hasFlagReasons = reasons.length > 0;
+  const hasSubstantiveFlagReasons = substantiveReasons.length > 0;
   const hasThinHistorySample =
     report?.author.meta.sampledPosts !== null &&
     report?.author.meta.sampledPosts !== undefined &&
@@ -256,7 +284,15 @@ export function DetectorPanel() {
   const hasHiddenPosts =
     report?.author.meta.submittedAvailable === false || report?.author.meta.sampledPosts === 0;
   const hasScoreMarginOfError = hasThinHistorySample || hasProfileGap;
-  const isCalmState = Boolean(report) && !hasFlagReasons;
+  const panelState: PanelState = report
+    ? hasSubstantiveFlagReasons
+      ? 'warning'
+      : hasScoreMarginOfError
+        ? 'neutral'
+        : 'calm'
+    : 'warning';
+  const isCalmState = panelState === 'calm';
+  const isNeutralState = panelState === 'neutral';
   const scoreRange =
     report && hasScoreMarginOfError ? getApproximateScoreRange(report.clampedScore) : null;
   const displayedScore =
@@ -265,6 +301,9 @@ export function DetectorPanel() {
         ? scoreRange.low
         : scoreRange.high
       : report?.clampedScore ?? 0;
+  const reportTone = report
+    ? scoreVisualTone(panelState, report.clampedScore, hasSubstantiveFlagReasons)
+    : 'medium';
 
   useEffect(() => {
     setHistoryIndex((currentIndex) => {
@@ -306,14 +345,18 @@ export function DetectorPanel() {
         className={
           isCalmState
             ? 'overflow-hidden rounded-xl border-emerald-400/15 bg-card/92'
-            : 'overflow-hidden rounded-xl border-primary/15 bg-card/92'
+            : isNeutralState
+              ? 'overflow-hidden rounded-xl border-slate-400/15 bg-card/92'
+              : 'overflow-hidden rounded-xl border-primary/15 bg-card/92'
         }
       >
         <CardHeader
           className={
             isCalmState
               ? 'gap-1.5 px-5 py-3.5 bg-gradient-to-br from-emerald-400/14 via-card/90 to-emerald-500/6'
-              : 'gap-1.5 px-5 py-3.5 bg-gradient-to-br from-primary/18 via-card/90 to-accent/14'
+              : isNeutralState
+                ? 'gap-1.5 px-5 py-3.5 bg-gradient-to-br from-slate-400/12 via-card/90 to-slate-500/6'
+                : 'gap-1.5 px-5 py-3.5 bg-gradient-to-br from-primary/18 via-card/90 to-accent/14'
           }
         >
           <div className="flex items-center gap-3">
@@ -322,10 +365,20 @@ export function DetectorPanel() {
                 className={
                   isCalmState
                     ? 'flex items-center gap-2 text-sm font-semibold tracking-[0.18em] text-emerald-300 uppercase'
-                    : 'flex items-center gap-2 text-sm font-semibold tracking-[0.18em] text-primary uppercase'
+                    : isNeutralState
+                      ? 'flex items-center gap-2 text-sm font-semibold tracking-[0.18em] text-slate-300 uppercase'
+                      : 'flex items-center gap-2 text-sm font-semibold tracking-[0.18em] text-primary uppercase'
                 }
               >
-                <ShieldAlertIcon className={isCalmState ? 'size-4 text-emerald-300' : 'size-4'} />
+                <ShieldAlertIcon
+                  className={
+                    isCalmState
+                      ? 'size-4 text-emerald-300'
+                      : isNeutralState
+                        ? 'size-4 text-slate-300'
+                        : 'size-4'
+                  }
+                />
                 LEPA
               </div>
             </div>
@@ -361,9 +414,10 @@ export function DetectorPanel() {
               <div className="flex items-center gap-3">
                 <Badge
                   className={scoreChipClass(
+                    panelState,
                     report.clampedScore,
                     hasScoreMarginOfError,
-                    hasFlagReasons,
+                    hasSubstantiveFlagReasons,
                   )}
                   variant="outline"
                 >
@@ -382,21 +436,27 @@ export function DetectorPanel() {
                         hasScoreMarginOfError
                           ? isCalmState
                             ? 'ring-1 ring-emerald-300/10 ring-inset bg-[repeating-linear-gradient(90deg,rgba(52,211,153,0.10)_0_10px,transparent_10px_20px)]'
-                          : 'ring-1 ring-amber-300/10 ring-inset bg-[repeating-linear-gradient(90deg,rgba(251,191,36,0.10)_0_10px,transparent_10px_20px)]'
+                            : isNeutralState
+                              ? 'ring-1 ring-slate-300/10 ring-inset bg-[repeating-linear-gradient(90deg,rgba(148,163,184,0.12)_0_10px,transparent_10px_20px)]'
+                              : 'ring-1 ring-amber-300/10 ring-inset bg-[repeating-linear-gradient(90deg,rgba(251,191,36,0.10)_0_10px,transparent_10px_20px)]'
                         : undefined
                       }
                       indicatorClassName={
-                        scoreVisualTone(report.clampedScore, hasFlagReasons) === 'high'
+                        reportTone === 'high'
                           ? hasScoreMarginOfError
                             ? 'bg-destructive/85'
                             : 'bg-destructive'
-                          : scoreVisualTone(report.clampedScore, hasFlagReasons) === 'medium'
+                          : reportTone === 'medium'
                             ? hasScoreMarginOfError
                               ? 'bg-primary/85'
                               : 'bg-primary'
-                            : hasScoreMarginOfError
-                              ? 'bg-emerald-400/85'
-                              : 'bg-emerald-400'
+                            : reportTone === 'neutral'
+                              ? hasScoreMarginOfError
+                                ? 'bg-slate-400/85'
+                                : 'bg-slate-400'
+                              : hasScoreMarginOfError
+                                ? 'bg-emerald-400/85'
+                                : 'bg-emerald-400'
                       }
                       value={report.clampedScore}
                     />
@@ -468,11 +528,21 @@ export function DetectorPanel() {
                     <div className="ml-auto flex items-center gap-2">
                       {hasHiddenPosts ? (
                         <Badge
-                          className="gap-1.5 border-amber-300/20 bg-amber-400/10 px-3 py-1.5 text-[0.7rem] leading-none text-amber-100 normal-case"
+                          className={
+                            isNeutralState
+                              ? 'gap-1.5 border-slate-300/20 bg-slate-400/10 px-3 py-1.5 text-[0.7rem] leading-none text-slate-100 normal-case'
+                              : 'gap-1.5 border-amber-300/20 bg-amber-400/10 px-3 py-1.5 text-[0.7rem] leading-none text-amber-100 normal-case'
+                          }
                           variant="outline"
                         >
-                          <AlertTriangleIcon className="size-3 shrink-0 text-amber-300" />
-                          Profile Historty Missing
+                          <AlertTriangleIcon
+                            className={
+                              isNeutralState
+                                ? 'size-3 shrink-0 text-slate-300'
+                                : 'size-3 shrink-0 text-amber-300'
+                            }
+                          />
+                          Profile history limited
                         </Badge>
                       ) : null}
                       {historySlides.length > 1 ? (
@@ -555,28 +625,38 @@ export function DetectorPanel() {
 
                 <section
                   className={
-                    hasFlagReasons
+                    hasSubstantiveFlagReasons
                       ? 'space-y-5 rounded-xl bg-amber-500/6 px-5 py-5'
-                      : 'space-y-5 rounded-xl bg-emerald-500/6 px-5 py-5'
+                      : isNeutralState
+                        ? 'space-y-5 rounded-xl bg-slate-400/8 px-5 py-5'
+                        : 'space-y-5 rounded-xl bg-emerald-500/6 px-5 py-5'
                   }
                 >
                   <div className="space-y-2">
                     <div className="flex items-center gap-2 text-base font-semibold text-foreground">
-                      {hasFlagReasons ? (
+                      {hasSubstantiveFlagReasons ? (
                         <AlertTriangleIcon className="size-4 text-amber-300" />
+                      ) : isNeutralState ? (
+                        <ShieldAlertIcon className="size-4 text-slate-300" />
                       ) : (
                         <CircleCheckBigIcon className="size-4 text-emerald-300" />
                       )}
-                      {hasFlagReasons ? 'Why it was flagged' : 'Looks normal'}
+                      {hasSubstantiveFlagReasons
+                        ? 'Why it was flagged'
+                        : isNeutralState
+                          ? 'Inconclusive'
+                          : 'Looks normal'}
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      {hasFlagReasons
+                      {hasSubstantiveFlagReasons
                         ? 'The score is a blend of language cues and posting history.'
-                        : 'Nothing in the title, account signals, or recent posting pattern stands out as suspicious right now.'}
+                        : isNeutralState
+                          ? 'There is not enough visible author history to make a confident call yet.'
+                          : 'Nothing in the title, account signals, or recent posting pattern stands out as suspicious right now.'}
                     </p>
                   </div>
 
-                  {hasFlagReasons ? (
+                  {hasSubstantiveFlagReasons ? (
                     <div className="flex flex-wrap gap-2">
                       {reasons.map((reason) => (
                         <Badge
@@ -588,6 +668,24 @@ export function DetectorPanel() {
                         </Badge>
                       ))}
                     </div>
+                  ) : isNeutralState ? (
+                    lowConfidenceReasons.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {lowConfidenceReasons.map((reason) => (
+                          <Badge
+                            className="max-w-full normal-case whitespace-normal text-left leading-5"
+                            key={reason}
+                            variant="outline"
+                          >
+                            {compactReasonLabel(reason)}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        Visible history is too limited to classify this post confidently.
+                      </p>
+                    )
                   ) : (
                     <p className="text-sm text-muted-foreground">
                       No major red flags were found in this post.
@@ -608,7 +706,13 @@ export function DetectorPanel() {
                     <div className="space-y-2">
                       <div className="flex items-center gap-2 text-base font-semibold text-foreground">
                         <UserRoundIcon
-                          className={isCalmState ? 'size-4 text-emerald-300' : 'size-4 text-primary'}
+                          className={
+                            isCalmState
+                              ? 'size-4 text-emerald-300'
+                              : isNeutralState
+                                ? 'size-4 text-slate-300'
+                                : 'size-4 text-primary'
+                          }
                         />
                         Account
                       </div>
@@ -650,7 +754,9 @@ export function DetectorPanel() {
                         className={
                           isCalmState
                             ? 'hidden w-px self-stretch rounded-full bg-emerald-400/15 md:block'
-                            : 'hidden w-px self-stretch rounded-full bg-border/55 md:block'
+                            : isNeutralState
+                              ? 'hidden w-px self-stretch rounded-full bg-slate-400/15 md:block'
+                              : 'hidden w-px self-stretch rounded-full bg-border/55 md:block'
                         }
                       />
 
@@ -658,7 +764,13 @@ export function DetectorPanel() {
                         <div className="space-y-2">
                           <div className="flex items-center gap-2 text-base font-semibold text-foreground">
                             <Clock3Icon
-                              className={isCalmState ? 'size-4 text-emerald-300' : 'size-4 text-primary'}
+                              className={
+                                isCalmState
+                                  ? 'size-4 text-emerald-300'
+                                  : isNeutralState
+                                    ? 'size-4 text-slate-300'
+                                    : 'size-4 text-primary'
+                              }
                             />
                             Posting behavior
                           </div>
