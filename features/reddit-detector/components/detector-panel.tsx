@@ -17,7 +17,7 @@ import type { VariantProps } from 'class-variance-authority';
 
 import { Badge, badgeVariants } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { formatAgeDays } from '@/features/reddit-detector/analysis';
@@ -222,6 +222,7 @@ function StatRow({ label, value }: { label: string; value: string }) {
 export function DetectorPanel() {
   const [historyIndex, setHistoryIndex] = useState(0);
   const [scoreRangeFrame, setScoreRangeFrame] = useState<'low' | 'high'>('low');
+  const [showScoreSummary, setShowScoreSummary] = useState(false);
   const query = useQuery({
     queryKey: ['reddit-detector', globalThis.location.pathname],
     queryFn: getCurrentDetectorReport,
@@ -276,6 +277,10 @@ export function DetectorPanel() {
   }, [historySlides.length, report?.post.name]);
 
   useEffect(() => {
+    setShowScoreSummary(false);
+  }, [report?.post.name]);
+
+  useEffect(() => {
     if (!scoreRange || scoreRange.low === scoreRange.high) {
       setScoreRangeFrame('low');
       return;
@@ -300,46 +305,58 @@ export function DetectorPanel() {
       <Card
         className={
           isCalmState
-            ? 'overflow-hidden border-emerald-400/15 bg-card/92'
-            : 'overflow-hidden border-primary/15 bg-card/92'
+            ? 'overflow-hidden rounded-xl border-emerald-400/15 bg-card/92'
+            : 'overflow-hidden rounded-xl border-primary/15 bg-card/92'
         }
       >
         <CardHeader
           className={
             isCalmState
-              ? 'gap-3 bg-gradient-to-br from-emerald-400/14 via-card/90 to-emerald-500/6'
-              : 'gap-3 bg-gradient-to-br from-primary/18 via-card/90 to-accent/14'
+              ? 'gap-1.5 px-5 py-3.5 bg-gradient-to-br from-emerald-400/14 via-card/90 to-emerald-500/6'
+              : 'gap-1.5 px-5 py-3.5 bg-gradient-to-br from-primary/18 via-card/90 to-accent/14'
           }
         >
-          <div className="flex items-start justify-between gap-3">
-            <div className="space-y-1">
+          <div className="flex items-center gap-3">
+            <div className="space-y-0.5">
               <div
                 className={
                   isCalmState
-                    ? 'flex items-center gap-2 text-[0.72rem] font-semibold tracking-[0.22em] text-emerald-300 uppercase'
-                    : 'flex items-center gap-2 text-[0.72rem] font-semibold tracking-[0.22em] text-primary uppercase'
+                    ? 'flex items-center gap-2 text-sm font-semibold tracking-[0.18em] text-emerald-300 uppercase'
+                    : 'flex items-center gap-2 text-sm font-semibold tracking-[0.18em] text-primary uppercase'
                 }
               >
                 <ShieldAlertIcon className={isCalmState ? 'size-4 text-emerald-300' : 'size-4'} />
-                Low-Effort Post Alarm
+                LEPA
               </div>
-              <CardTitle className="text-lg">Reddit bait detector</CardTitle>
             </div>
-            <Button
-              aria-label="Refresh analysis"
-              onClick={() => {
-                startTransition(() => {
-                  void query.refetch();
-                });
-              }}
-              size="icon"
-              variant="outline"
-            >
-              <RefreshCcwIcon className="size-4" />
-            </Button>
+            <div className="ml-auto flex items-center justify-end gap-1.5">
+              {report ? (
+                <Button
+                  onClick={() => {
+                    setShowScoreSummary((currentValue) => !currentValue);
+                  }}
+                  size="sm"
+                  variant="ghost"
+                >
+                  {showScoreSummary ? 'Hide score' : 'Show score'}
+                </Button>
+              ) : null}
+              <Button
+                aria-label="Refresh analysis"
+                onClick={() => {
+                  startTransition(() => {
+                    void query.refetch();
+                  });
+                }}
+                size="icon"
+                variant="outline"
+              >
+                <RefreshCcwIcon className="size-4" />
+              </Button>
+            </div>
           </div>
 
-          {report ? (
+          {report && showScoreSummary ? (
             <div className="space-y-3">
               <div className="flex items-center gap-3">
                 <Badge
@@ -389,7 +406,7 @@ export function DetectorPanel() {
           ) : null}
         </CardHeader>
 
-        <CardContent className="detector-scroll max-h-[72vh] space-y-4 overflow-y-auto pt-5 pb-5">
+        <CardContent className="detector-scroll max-h-[78vh] space-y-5 overflow-y-auto pt-4 pb-4">
           <AnimatePresence mode="wait">
             {query.isPending ? (
               <motion.div
@@ -415,7 +432,7 @@ export function DetectorPanel() {
               <motion.div
                 key="error"
                 animate={{ opacity: 1, y: 0 }}
-                className="space-y-4"
+                className="space-y-5"
                 exit={{ opacity: 0, y: -8 }}
                 initial={{ opacity: 0, y: 12 }}
               >
@@ -448,43 +465,54 @@ export function DetectorPanel() {
                       <UserRoundIcon className="size-3.5" />
                       u/{report.post.author}
                     </div>
-                    {historySlides.length > 1 ? (
-                      <div className="inline-flex items-center gap-1 font-mono">
-                        <Button
-                          aria-label="Show previous post"
-                          className="size-7"
-                          disabled={historyIndex === 0}
-                          onClick={() => setHistoryIndex((currentIndex) => Math.max(0, currentIndex - 1))}
-                          size="icon"
-                          variant="ghost"
+                    <div className="ml-auto flex items-center gap-2">
+                      {hasHiddenPosts ? (
+                        <Badge
+                          className="gap-1.5 border-amber-300/20 bg-amber-400/10 px-3 py-1.5 text-[0.7rem] leading-none text-amber-100 normal-case"
+                          variant="outline"
                         >
-                          <ChevronLeftIcon className="size-3.5" />
-                        </Button>
-                        <span className="min-w-8 text-center">
-                          {historyIndex + 1}/{historySlides.length}
-                        </span>
-                        <Button
-                          aria-label="Show next post"
-                          className="size-7"
-                          disabled={historyIndex === historySlides.length - 1}
-                          onClick={() =>
-                            setHistoryIndex((currentIndex) =>
-                              Math.min(historySlides.length - 1, currentIndex + 1),
-                            )
-                          }
-                          size="icon"
-                          variant="ghost"
-                        >
-                          <ChevronRightIcon className="size-3.5" />
-                        </Button>
-                      </div>
-                    ) : null}
+                          <AlertTriangleIcon className="size-3 shrink-0 text-amber-300" />
+                          Profile Historty Missing
+                        </Badge>
+                      ) : null}
+                      {historySlides.length > 1 ? (
+                        <div className="inline-flex items-center gap-1 font-mono">
+                          <Button
+                            aria-label="Show previous post"
+                            className="size-7"
+                            disabled={historyIndex === 0}
+                            onClick={() => setHistoryIndex((currentIndex) => Math.max(0, currentIndex - 1))}
+                            size="icon"
+                            variant="ghost"
+                          >
+                            <ChevronLeftIcon className="size-3.5" />
+                          </Button>
+                          <span className="min-w-8 text-center">
+                            {historyIndex + 1}/{historySlides.length}
+                          </span>
+                          <Button
+                            aria-label="Show next post"
+                            className="size-7"
+                            disabled={historyIndex === historySlides.length - 1}
+                            onClick={() =>
+                              setHistoryIndex((currentIndex) =>
+                                Math.min(historySlides.length - 1, currentIndex + 1),
+                              )
+                            }
+                            size="icon"
+                            variant="ghost"
+                          >
+                            <ChevronRightIcon className="size-3.5" />
+                          </Button>
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
 
                   {activeHistorySlide ? (
                     <motion.div
                       animate={{ opacity: 1, x: 0 }}
-                      className="space-y-3 rounded-2xl bg-background/35 px-4 py-4"
+                      className="space-y-4 rounded-xl bg-background/35 px-5 py-4"
                       initial={{ opacity: 0, x: 14 }}
                       key={activeHistorySlide.id}
                       transition={{ duration: 0.18, ease: 'easeOut' }}
@@ -528,8 +556,8 @@ export function DetectorPanel() {
                 <section
                   className={
                     hasFlagReasons
-                      ? 'space-y-4 rounded-2xl bg-amber-500/6 px-4 py-4'
-                      : 'space-y-4 rounded-2xl bg-emerald-500/6 px-4 py-4'
+                      ? 'space-y-5 rounded-xl bg-amber-500/6 px-5 py-5'
+                      : 'space-y-5 rounded-xl bg-emerald-500/6 px-5 py-5'
                   }
                 >
                   <div className="space-y-2">
@@ -567,10 +595,10 @@ export function DetectorPanel() {
                   )}
                 </section>
 
-                <Separator className="mt-2" />
+                <Separator />
 
-                <section className="grid gap-8 md:grid-cols-[minmax(0,1fr)_1px_minmax(0,1fr)] md:gap-6">
-                  <div className="space-y-4">
+                <section className="grid gap-6 md:grid-cols-[minmax(0,1fr)_1px_minmax(0,1fr)] md:gap-5">
+                  <div className="space-y-3">
                     <div className="space-y-2">
                       <div className="flex items-center gap-2 text-base font-semibold text-foreground">
                         <UserRoundIcon
@@ -585,7 +613,7 @@ export function DetectorPanel() {
                       ) : null}
                     </div>
 
-                    <div className="space-y-3">
+                    <div className="space-y-2.5">
                       <StatRow
                         label="Age"
                         value={displayMetric(report.author.meta.accountAgeDays, formatAgeDays)}
@@ -614,7 +642,7 @@ export function DetectorPanel() {
                     }
                   />
 
-                  <div className="space-y-4">
+                  <div className="space-y-3">
                     <div className="space-y-2">
                       <div className="flex items-center gap-2 text-base font-semibold text-foreground">
                         <Clock3Icon
@@ -622,12 +650,9 @@ export function DetectorPanel() {
                         />
                         Posting behavior
                       </div>
-                      {hasHiddenPosts ? (
-                        <CardDescription>Profile history is hidden or unavailable.</CardDescription>
-                      ) : null}
                     </div>
 
-                    <div className="space-y-3">
+                    <div className="space-y-2.5">
                       <StatRow
                         label="Total posts"
                         value={displayMetric(report.author.meta.sampledPosts)}
